@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------
+   Tokens de marca — 1er Millón de Dólares
+   Ver /docs/ARQUITECTURA.md → "Marca y tokens" para el porqué de
+   cada valor. Oscuro es el tema por defecto (coincide con la
+   estética de terminal de trading ya usada en la comunidad).
+--------------------------------------------------------------- */
+:root {
+  --bg: #0b0e14;
+  --panel: #131722;
+  --input: #1e222d;
+  --border: #2a2e39;
+  --text: #e0e0e0;
+  --text-soft: #828594;
+  --gold: #d4af37;
+  --gold-light: #f3e5ab;
+  --green: #089981;
+  --red: #f23645;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f5f1;
+    --panel: #ffffff;
+    --input: #efeee7;
+    --border: #dedcd1;
+    --text: #181a1f;
+    --text-soft: #6b6e63;
+    --gold: #a9821e;
+    --gold-light: #8a6a16;
+    --green: #0a7a62;
+    --red: #c22a38;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f5f1;
+  --panel: #ffffff;
+  --input: #efeee7;
+  --border: #dedcd1;
+  --text: #181a1f;
+  --text-soft: #6b6e63;
+  --gold: #a9821e;
+  --gold-light: #8a6a16;
+  --green: #0a7a62;
+  --red: #c22a38;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-soft: var(--text-soft);
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-green: var(--green);
+  --color-red: var(--red);
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
