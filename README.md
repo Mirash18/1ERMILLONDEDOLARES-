@@ -13,8 +13,7 @@ documentación de **cómo funciona por dentro y por qué** vive en
 
 ## Estado
 
-Fase 1 de 6 (estructura base y marca). Ver `/docs/ARQUITECTURA.md` para
-la tabla completa de fases.
+Fase 2 de 6 completa (gráficos en tiempo real con SPY/META/GLD). Ver `/docs/ARQUITECTURA.md` para la tabla completa de fases.
 
 ## Correr el proyecto localmente
 
