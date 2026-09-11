@@ -113,27 +113,30 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
     Twelve Data) — antes solo se guardaba la fecha, lo que habría
     mezclado todas las velas de un mismo día en el marco "Hora".
 - **Segundo pulido del gráfico (sept. 2026):**
-  - Los controles sueltos (símbolo, marco de tiempo, indicadores) se
-    reemplazaron por menús desplegables compactos (`SelectDropdown`,
-    `IndicatorsDropdown` en `CandleChart.tsx`) — un solo botón que se
-    expande en vez de una fila de botones, como pidió Alejo para que la
-    barra de herramientas no se vea desordenada. Se cierran al elegir
-    una opción, al hacer clic afuera o con Escape.
-  - Cuenta regresiva "Próxima vela en…" superpuesta en la esquina
-    superior derecha del gráfico, junto a donde ya se muestra el precio
-    — calculada con `nextCandleBoundary()` según el marco de tiempo
-    activo y actualizada cada segundo. Empieza en `null` a propósito (no
-    con `Date.now()` directamente) para evitar un error de hidratación
-    de React, ya que el render de servidor y el primer render del
-    navegador ocurren en instantes distintos; el valor real se llena
-    recién montado el componente, en el navegador.
-  - `timeScale.timeVisible` activado para que los marcos intradía
-    muestren la hora de cada vela en el eje X (no solo la fecha), y la
-    fecha y hora completas al pasar el mouse sobre una vela — igual que
-    en ProRealTime, que fue la referencia que mandó Alejo.
-  - Los menús desplegables usan `z-index` más alto que la insignia de la
-    cuenta regresiva, para que un menú abierto no quede tapado por ella
-    en la esquina superior derecha.
+  - Los botones sueltos de símbolo, marco temporal e indicadores se
+    reemplazaron por menús desplegables (`SelectDropdown` para símbolo
+    y marco temporal, `IndicatorsDropdown` para volumen/Bollinger) en
+    `CandleChart.tsx` — mismo comportamiento, barra de herramientas más
+    ordenada.
+  - Insignia "Próxima vela en…": cuenta regresiva en vivo hasta que
+    cierra la vela actual y abre la siguiente, calculada en
+    `nextCandleBoundary()` según el marco temporal elegido. El reloj se
+    arranca en un `useEffect` (nunca con `useState(() => Date.now())`
+    directo) para no romper la hidratación de React.
+  - Eje de tiempo con la hora de cada vela intradía visible debajo del
+    gráfico (`timeVisible: true` en `lightweight-charts`) y fecha+hora
+    completa al pasar el cursor por una vela, igual que en ProRealTime.
+  - **Insignia pegada al precio actual:** la insignia de "Próxima vela
+    en…" ya no queda fija en una esquina — se posiciona justo debajo de
+    la etiqueta nativa de precio y sube o baja con ella. Se calcula con
+    `series.priceToCoordinate()` sobre el último cierre
+    (`updatePriceY()` en `CandleChart.tsx`), y se recalcula al llegar
+    datos nuevos, al cambiar el tamaño del panel, al hacer zoom o
+    desplazarse por el histórico, y al mostrar/ocultar las Bandas de
+    Bollinger (porque ensanchan o angostan la escala de precio). La
+    posición se limita (`clampBadgeTop()`) para que la insignia nunca
+    se salga del panel por arriba o por abajo, y se mueve con una
+    transición suave en vez de saltar de golpe.
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
