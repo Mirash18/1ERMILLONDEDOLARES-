@@ -108,3 +108,117 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
     };
   });
 }
+
+export type Candle = {
+  time: string; // "YYYY-MM-DD"
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+export type CandleSeries = {
+  symbol: string;
+  candles: Candle[];
+  // Medias móviles simples, alineadas 1 a 1 con `candles` (null donde no hay
+  // suficiente historia todavía). Mismas que se usan en la comunidad:
+  // MA20 (amarilla), MA40 (roja), MA100 (verde).
+  sma20: (number | null)[];
+  sma40: (number | null)[];
+  sma100: (number | null)[];
+  error?: string;
+};
+
+const TWELVE_DATA_TIME_SERIES_URL = "https://api.twelvedata.com/time_series";
+
+function simpleMovingAverage(
+  closes: number[],
+  period: number
+): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= period) sum -= closes[i - period];
+    if (i >= period - 1) result[i] = sum / period;
+  }
+  return result;
+}
+
+export async function getCandles(
+  symbol: string,
+  interval: string = "1day",
+  outputsize: number = 180
+): Promise<CandleSeries> {
+  const empty: CandleSeries = {
+    symbol,
+    candles: [],
+    sma20: [],
+    sma40: [],
+    sma100: [],
+  };
+
+  const apiKey = process.env.TWELVEDATA_API_KEY;
+  if (!apiKey) {
+    return { ...empty, error: "TWELVEDATA_API_KEY no configurada en el servidor" };
+  }
+
+  const url = `${TWELVE_DATA_TIME_SERIES_URL}?symbol=${encodeURIComponent(
+    symbol
+  )}&interval=${encodeURIComponent(interval)}&outputsize=${outputsize}&apikey=${apiKey}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      // Velas diarias no cambian minuto a minuto: 5 min de caché es de sobra
+      // y ayuda mucho a no gastar créditos del plan gratuito.
+      next: { revalidate: 300 },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "error de red";
+    return { ...empty, error: message };
+  }
+
+  if (!res.ok) {
+    return { ...empty, error: `Twelve Data respondió ${res.status}` };
+  }
+
+  const data = await res.json();
+
+  if (data.status === "error" || !Array.isArray(data.values)) {
+    return { ...empty, error: data.message ?? "sin datos" };
+  }
+
+  type RawValue = {
+    datetime: string;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+    volume: string;
+  };
+
+  // Twelve Data entrega lo más reciente primero; el gráfico necesita orden
+  // cronológico ascendente.
+  const values = [...(data.values as RawValue[])].reverse();
+
+  const candles: Candle[] = values.map((v) => ({
+    time: v.datetime.slice(0, 10),
+    open: Number(v.open),
+    high: Number(v.high),
+    low: Number(v.low),
+    close: Number(v.close),
+    volume: Number(v.volume),
+  }));
+
+  const closes = candles.map((c) => c.close);
+
+  return {
+    symbol,
+    candles,
+    sma20: simpleMovingAverage(closes, 20),
+    sma40: simpleMovingAverage(closes, 40),
+    sma100: simpleMovingAverage(closes, 100),
+  };
+}
