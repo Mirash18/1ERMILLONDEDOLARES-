@@ -110,7 +110,7 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
 }
 
 export type Candle = {
-  time: string; // "YYYY-MM-DD"
+  time: number; // Unix timestamp en segundos, siempre en UTC.
   open: number;
   high: number;
   low: number;
@@ -123,10 +123,15 @@ export type CandleSeries = {
   candles: Candle[];
   // Medias móviles simples, alineadas 1 a 1 con `candles` (null donde no hay
   // suficiente historia todavía). Mismas que se usan en la comunidad:
-  // MA20 (amarilla), MA40 (roja), MA100 (verde).
+  // MA20 (amarilla), MA40 (roja), MA100 (verde), MA200 (morada).
   sma20: (number | null)[];
   sma40: (number | null)[];
   sma100: (number | null)[];
+  sma200: (number | null)[];
+  // Bandas de Bollinger (20 periodos, 2 desviaciones estándar). La banda
+  // media coincide con sma20, así que no se repite aquí.
+  bbUpper: (number | null)[];
+  bbLower: (number | null)[];
   error?: string;
 };
 
@@ -146,6 +151,46 @@ function simpleMovingAverage(
   return result;
 }
 
+function standardDeviation(values: number[], mean: number): number {
+  const variance =
+    values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/**
+ * Bandas de Bollinger clásicas: banda media = SMA(period), bandas superior
+ * e inferior = media ± (multiplier × desviación estándar) de esa misma
+ * ventana. Implementación de referencia mientras se revisa/ajusta con el
+ * código que va a mandar Miguel — ver docs/ARQUITECTURA.md.
+ */
+function bollingerBands(
+  closes: number[],
+  period: number = 20,
+  multiplier: number = 2
+): { upper: (number | null)[]; lower: (number | null)[] } {
+  const upper: (number | null)[] = new Array(closes.length).fill(null);
+  const lower: (number | null)[] = new Array(closes.length).fill(null);
+
+  for (let i = period - 1; i < closes.length; i++) {
+    const window = closes.slice(i - period + 1, i + 1);
+    const mean = window.reduce((a, b) => a + b, 0) / period;
+    const sd = standardDeviation(window, mean);
+    upper[i] = mean + multiplier * sd;
+    lower[i] = mean - multiplier * sd;
+  }
+
+  return { upper, lower };
+}
+
+// Twelve Data entrega la hora en la zona horaria de la bolsa por defecto;
+// pedimos UTC explícitamente para poder convertir a timestamp sin ambigüedad.
+function toUnixSeconds(datetime: string): number {
+  const iso = datetime.includes(" ")
+    ? datetime.replace(" ", "T") + "Z"
+    : `${datetime}T00:00:00Z`;
+  return Math.floor(new Date(iso).getTime() / 1000);
+}
+
 export async function getCandles(
   symbol: string,
   interval: string = "1day",
@@ -157,6 +202,9 @@ export async function getCandles(
     sma20: [],
     sma40: [],
     sma100: [],
+    sma200: [],
+    bbUpper: [],
+    bbLower: [],
   };
 
   const apiKey = process.env.TWELVEDATA_API_KEY;
@@ -164,15 +212,17 @@ export async function getCandles(
     return { ...empty, error: "TWELVEDATA_API_KEY no configurada en el servidor" };
   }
 
-  const url = `${TWELVE_DATA_TIME_SERIES_URL}?symbol=${encodeURIComponent(
-    symbol
-  )}&interval=${encodeURIComponent(interval)}&outputsize=${outputsize}&apikey=${apiKey}`;
+  const url =
+    `${TWELVE_DATA_TIME_SERIES_URL}?symbol=${encodeURIComponent(symbol)}` +
+    `&interval=${encodeURIComponent(interval)}&outputsize=${outputsize}` +
+    `&timezone=UTC&apikey=${apiKey}`;
 
   let res: Response;
   try {
     res = await fetch(url, {
-      // Velas diarias no cambian minuto a minuto: 5 min de caché es de sobra
-      // y ayuda mucho a no gastar créditos del plan gratuito.
+      // Los marcos intradía se mueven más rápido que los diarios, pero 5 min
+      // de caché sigue siendo prudente para no agotar el plan gratuito
+      // (8 créditos/minuto, 800/día) en ningún marco de tiempo.
       next: { revalidate: 300 },
     });
   } catch (err) {
@@ -204,7 +254,7 @@ export async function getCandles(
   const values = [...(data.values as RawValue[])].reverse();
 
   const candles: Candle[] = values.map((v) => ({
-    time: v.datetime.slice(0, 10),
+    time: toUnixSeconds(v.datetime),
     open: Number(v.open),
     high: Number(v.high),
     low: Number(v.low),
@@ -213,6 +263,7 @@ export async function getCandles(
   }));
 
   const closes = candles.map((c) => c.close);
+  const bb = bollingerBands(closes, 20, 2);
 
   return {
     symbol,
@@ -220,5 +271,8 @@ export async function getCandles(
     sma20: simpleMovingAverage(closes, 20),
     sma40: simpleMovingAverage(closes, 40),
     sma100: simpleMovingAverage(closes, 100),
+    sma200: simpleMovingAverage(closes, 200),
+    bbUpper: bb.upper,
+    bbLower: bb.lower,
   };
 }
