@@ -9,12 +9,12 @@ olvida.
 
 **Dominio:** `1ermillondedolares.com` (comprado).
 
-**Fase 1 — Estructura base y marca.** En progreso.
+**Fase 2 — Motor de gráficos en tiempo real.** Completa y desplegada.
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| 1 | Estructura base, marca, documentación | En progreso |
-| 2 | Motor de gráficos en tiempo real (SPY/META/GLD) | Pendiente |
+| 1 | Estructura base, marca, documentación | Completa |
+| 2 | Motor de gráficos en tiempo real (SPY/META/GLD) | Completa |
 | 3 | Pagos (Stripe) + nivel $25/mes | Pendiente |
 | 4 | Clases en vivo vía Vimeo | Pendiente |
 | 5 | Herramientas de estudio (calculadora + indicadores) | Pendiente |
@@ -64,7 +64,7 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
 5. El mismo estado se usa para dar o quitar acceso a las clases en
    Vimeo (Fase 4).
 
-## Datos de mercado (Fase 2 — en progreso)
+## Datos de mercado (Fase 2 — completa)
 
 - **Proveedor elegido: Twelve Data.** Por ahora se está usando una
   clave del plan gratuito, solo para desarrollar y probar.
@@ -73,18 +73,23 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
   su licencia no autoriza mostrar esos datos a visitantes reales de la
   página. Antes de lanzar al público hay que subir a un plan de pago
   que sí incluya derecho de uso público/redistribución — confirmar el
-  plan exacto con Twelve Data antes de la Fase 3.
+  plan exacto con Twelve Data antes de anunciar la página públicamente.
 - Implementado: `src/lib/marketData.ts` (llama a la API de Twelve Data
-  desde el servidor, la llave nunca llega al navegador) y
-  `src/app/api/quotes/route.ts` (ruta que sirve las cotizaciones de
-  SPY/META/GLD al home). Se cachea 30 segundos en servidor para no
-  agotar el límite del plan gratuito (8 créditos/minuto, 800/día).
+  desde el servidor, la llave nunca llega al navegador),
+  `src/app/api/quotes/route.ts` (cotizaciones de SPY/META/GLD para la
+  tira de precios) y `src/app/api/candles/route.ts` (velas diarias +
+  medias móviles para el gráfico). Las cotizaciones se cachean 30
+  segundos y las velas 5 minutos en servidor, para no agotar el límite
+  del plan gratuito (8 créditos/minuto, 800/día).
 - El universo pagado (S&P 500, Nasdaq) se conecta de la misma forma en
   la Fase 3, protegido por la verificación de suscripción.
-- La interfaz visual del gráfico (velas, indicadores) todavía falta —
-  se va a construir con la librería TradingView Advanced Charts
-  (gratuita, requiere aprobación de TradingView) conectada a este mismo
-  feed de datos.
+- **Gráfico de velas en vivo:** construido con `lightweight-charts`
+  (la librería open-source de TradingView) en `src/components/CandleChart.tsx`.
+  Muestra velas japonesas reales con selector de símbolo (SPY/META/GLD)
+  y las tres medias móviles simples que se usan en la comunidad — MA20
+  (amarilla), MA40 (roja), MA100 (verde) — calculadas en servidor en
+  `simpleMovingAverage()` dentro de `marketData.ts`. Desplegado y
+  verificado en producción con datos reales.
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
