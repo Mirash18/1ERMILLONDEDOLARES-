@@ -1,12 +1,7 @@
 import { TickerStrip } from "@/components/TickerStrip";
+import { CandleChart } from "@/components/CandleChart";
 
 const modules = [
-  {
-    tag: "Gráficos",
-    title: "Datos en tiempo real",
-    status: "Fase 2 — en pruebas (Twelve Data)",
-    body: "Cotizaciones live de SPY/META/GLD ya conectadas con clave de prueba. Falta el gráfico visual (TradingView Advanced Charts) y subir a un plan con licencia de uso público.",
-  },
   {
     tag: "Clases en vivo",
     title: "Profesor Miguel Cortés",
@@ -49,8 +44,12 @@ export default function Home() {
           </p>
         </section>
 
-        <section className="mb-16">
+        <section className="mb-8">
           <TickerStrip />
+        </section>
+
+        <section className="mb-16">
+          <CandleChart />
         </section>
 
         <section>
@@ -60,7 +59,7 @@ export default function Home() {
             </h2>
             <div className="h-px flex-1 bg-border" />
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             {modules.map((m) => (
               <div
                 key={m.title}
