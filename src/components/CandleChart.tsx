@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -30,6 +30,16 @@ const MA_LINES = [
 ];
 
 const BOLLINGER_COLOR = "#60A5FA";
+
+// Alto fijo del panel del gráfico — se usa tanto para crear el gráfico como
+// para no dejar que la insignia de "próxima vela" se salga del panel.
+const CHART_HEIGHT = 420;
+
+// Cuánto se separa la insignia de la etiqueta nativa de precio (para no
+// quedar encimada) y cuánto ocupa ella misma, para no dejarla salir del
+// panel por arriba o por abajo.
+const BADGE_GAP_BELOW_PRICE = 18;
+const BADGE_HEIGHT_ESTIMATE = 22;
 
 type Theme = "dark" | "light";
 
@@ -113,6 +123,16 @@ function nextCandleBoundary(nowSeconds: number, timeframe: TimeframeKey): number
   }
   // "1month": primer día del mes siguiente, 00:00 UTC.
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000);
+}
+
+// Convierte la posición en píxeles del último precio (o null si aún no se
+// puede calcular) en el "top" que le corresponde a la insignia, pegada justo
+// debajo de esa altura y sin salirse del panel del gráfico.
+function clampBadgeTop(priceY: number | null): number {
+  if (priceY === null) return 8;
+  const min = 8;
+  const max = CHART_HEIGHT - BADGE_HEIGHT_ESTIMATE - 8;
+  return Math.min(Math.max(priceY + BADGE_GAP_BELOW_PRICE, min), max);
 }
 
 function formatCountdown(totalSeconds: number): string {
@@ -284,6 +304,9 @@ export function CandleChart() {
   // el efecto de abajo — eso ya no es hidratación, es una actualización
   // normal posterior.
   const [nowSeconds, setNowSeconds] = useState<number | null>(null);
+  // En qué altura (px) del panel cae el último precio — la insignia de
+  // "próxima vela" se posiciona con esto para quedar pegada al precio.
+  const [priceY, setPriceY] = useState<number | null>(null);
 
   const palette = PALETTES[theme];
 
@@ -294,6 +317,22 @@ export function CandleChart() {
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Copia siempre actualizada de `data`, para leerla desde callbacks creados
+  // una sola vez (como el de resize) sin quedarse con datos viejos.
+  const dataRef = useRef<CandleSeries | null>(null);
+
+  // Recalcula en qué altura cae el último precio en el panel — se llama
+  // cuando llegan datos nuevos, al cambiar el tamaño del gráfico y al hacer
+  // zoom o desplazarse por el histórico, para que la insignia se quede
+  // pegada al precio como pidió Alejo.
+  const updatePriceY = useCallback(() => {
+    const candles = dataRef.current?.candles;
+    const series = candleSeriesRef.current;
+    if (!candles || candles.length === 0 || !series) return;
+    const lastClose = candles[candles.length - 1].close;
+    const y = series.priceToCoordinate(lastClose);
+    setPriceY(y);
+  }, []);
 
   // Reloj de un segundo para el contador de "próxima vela en...". Arranca
   // ya montado en el navegador, nunca durante el render de servidor.
@@ -340,7 +379,7 @@ export function CandleChart() {
         horzAlign: "center",
         vertAlign: "center",
       },
-      height: 420,
+      height: CHART_HEIGHT,
     });
 
     const candleSeries = chart.addCandlestickSeries({
@@ -393,12 +432,19 @@ export function CandleChart() {
       if (containerRef.current) {
         chart.applyOptions({ width: containerRef.current.clientWidth });
       }
+      updatePriceY();
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(containerRef.current);
 
+    // Si el usuario hace zoom o se desplaza por el histórico también puede
+    // cambiar la escala de precio (autoscale) — se recalcula ahí también
+    // para que la insignia se mantenga pegada al precio.
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePriceY);
+
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -437,7 +483,11 @@ export function CandleChart() {
   useEffect(() => {
     bbUpperRef.current?.applyOptions({ visible: showBollinger });
     bbLowerRef.current?.applyOptions({ visible: showBollinger });
-  }, [showBollinger]);
+    // Las bandas ensanchan (o angostan) el rango visible del eje de precio,
+    // así que el último precio puede caer en otra altura al mostrarlas u
+    // ocultarlas — un frame después de que aplique el nuevo autoscale.
+    requestAnimationFrame(updatePriceY);
+  }, [showBollinger, updatePriceY]);
 
   // Carga los datos cada vez que cambia el símbolo o el marco de tiempo.
   useEffect(() => {
@@ -463,6 +513,10 @@ export function CandleChart() {
       cancelled = true;
     };
   }, [symbol, timeframe]);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   // Pinta los datos en el gráfico cuando llegan.
   useEffect(() => {
@@ -496,7 +550,11 @@ export function CandleChart() {
     bbLowerRef.current?.setData(toLinePoints(data.candles, data.bbLower));
 
     chartRef.current?.timeScale().fitContent();
-  }, [data]);
+
+    // Un frame después, para que el autoscale del precio ya haya aplicado
+    // antes de calcular dónde cae el último precio en el panel.
+    requestAnimationFrame(updatePriceY);
+  }, [data, updatePriceY]);
 
   const secondsToNextCandle =
     nowSeconds === null ? null : nextCandleBoundary(nowSeconds, timeframe) - nowSeconds;
@@ -572,10 +630,16 @@ export function CandleChart() {
       <div className="relative">
         <div ref={containerRef} className="w-full" />
         {/* Cuenta regresiva hasta que cierre la vela actual y abra la
-            siguiente — junto a donde el gráfico ya muestra el precio. */}
+            siguiente — pegada justo debajo de la etiqueta de precio actual,
+            así que sube y baja con el precio en vez de quedar fija en una
+            esquina. */}
         <div
-          className="pointer-events-none absolute right-2 top-2 z-30 rounded px-2 py-1 font-mono text-[10px]"
-          style={{ backgroundColor: palette.badgeBg, color: palette.textSoft }}
+          className="pointer-events-none absolute right-2 z-30 rounded px-2 py-1 font-mono text-[10px] transition-[top] duration-200 ease-out"
+          style={{
+            backgroundColor: palette.badgeBg,
+            color: palette.textSoft,
+            top: `${clampBadgeTop(priceY)}px`,
+          }}
         >
           Próxima vela en{" "}
           {secondsToNextCandle === null ? "—:—" : formatCountdown(secondsToNextCandle)}
