@@ -112,6 +112,28 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
     UTC (`toUnixSeconds()` en `marketData.ts`, pidiendo `timezone=UTC` a
     Twelve Data) — antes solo se guardaba la fecha, lo que habría
     mezclado todas las velas de un mismo día en el marco "Hora".
+- **Segundo pulido del gráfico (sept. 2026):**
+  - Los controles sueltos (símbolo, marco de tiempo, indicadores) se
+    reemplazaron por menús desplegables compactos (`SelectDropdown`,
+    `IndicatorsDropdown` en `CandleChart.tsx`) — un solo botón que se
+    expande en vez de una fila de botones, como pidió Alejo para que la
+    barra de herramientas no se vea desordenada. Se cierran al elegir
+    una opción, al hacer clic afuera o con Escape.
+  - Cuenta regresiva "Próxima vela en…" superpuesta en la esquina
+    superior derecha del gráfico, junto a donde ya se muestra el precio
+    — calculada con `nextCandleBoundary()` según el marco de tiempo
+    activo y actualizada cada segundo. Empieza en `null` a propósito (no
+    con `Date.now()` directamente) para evitar un error de hidratación
+    de React, ya que el render de servidor y el primer render del
+    navegador ocurren en instantes distintos; el valor real se llena
+    recién montado el componente, en el navegador.
+  - `timeScale.timeVisible` activado para que los marcos intradía
+    muestren la hora de cada vela en el eje X (no solo la fecha), y la
+    fecha y hora completas al pasar el mouse sobre una vela — igual que
+    en ProRealTime, que fue la referencia que mandó Alejo.
+  - Los menús desplegables usan `z-index` más alto que la insignia de la
+    cuenta regresiva, para que un menú abierto no quede tapado por ella
+    en la esquina superior derecha.
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
