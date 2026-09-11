@@ -86,10 +86,32 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
 - **Gráfico de velas en vivo:** construido con `lightweight-charts`
   (la librería open-source de TradingView) en `src/components/CandleChart.tsx`.
   Muestra velas japonesas reales con selector de símbolo (SPY/META/GLD)
-  y las tres medias móviles simples que se usan en la comunidad — MA20
-  (amarilla), MA40 (roja), MA100 (verde) — calculadas en servidor en
-  `simpleMovingAverage()` dentro de `marketData.ts`. Desplegado y
-  verificado en producción con datos reales.
+  y las cuatro medias móviles simples que se usan en la comunidad — MA20
+  (amarilla), MA40 (roja), MA100 (verde), MA200 (morada) — calculadas en
+  servidor en `simpleMovingAverage()` dentro de `marketData.ts`.
+  Desplegado y verificado en producción con datos reales.
+- **Personalización del gráfico (pulido de Fase 2, sept. 2026):**
+  - Selector de marco temporal: Hora / Día / Semana / Mes, mapeado a los
+    intervalos de Twelve Data (`1h`, `1day`, `1week`, `1month`) —
+    validado en `src/app/api/candles/route.ts` contra una lista blanca.
+  - Sin líneas de cuadrícula — solo las velas, más limpio.
+  - Marca de agua transparente con el símbolo activo (usa el `watermark`
+    nativo de `lightweight-charts`), para que siempre sea obvio qué
+    acción se está mirando aunque no se vea la barra de símbolos.
+  - Volumen (histograma) con botón para mostrarlo u ocultarlo, en el
+    mismo panel debajo de las velas.
+  - Bandas de Bollinger (20 periodos, 2 desviaciones estándar) con
+    botón para mostrarlas u ocultarlas — cálculo de referencia en
+    `bollingerBands()` dentro de `marketData.ts`, pendiente de revisar
+    contra el código que va a compartir Alejo/Miguel Cortés para
+    confirmar que coincide con el que usan en la comunidad.
+  - Tema del gráfico (fondo claro/oscuro) independiente del tema del
+    sitio — el usuario lo cambia con un botón y queda solo en ese
+    componente, sin afectar el resto de la página.
+  - Las horas de las velas intradía ahora viajan como timestamp Unix en
+    UTC (`toUnixSeconds()` en `marketData.ts`, pidiendo `timezone=UTC` a
+    Twelve Data) — antes solo se guardaba la fecha, lo que habría
+    mezclado todas las velas de un mismo día en el marco "Hora".
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
