@@ -760,49 +760,38 @@ export function CandleChart() {
     bbUpperRef.current?.setData(toLinePoints(data.candles, data.bbUpper));
     bbLowerRef.current?.setData(toLinePoints(data.candles, data.bbLower));
 
-    // Marca la vela de apertura de cada día en el marco intradía. Es la vela
-    // de media hora con la que arranca la sesión (8:30 en Colombia), y es la
-    // que se mira para saber si el mercado abrió verde o rojo. El punto va
-    // del color de esa vela, y la del día más reciente lleva además la
-    // palabra "apertura" para ubicarla de una.
+    // Señala SOLO la vela de apertura de la sesión más reciente — la de media
+    // hora con la que arranca el día (8:30 en Colombia). Antes se marcaban
+    // todas las aperturas del histórico y el gráfico quedaba lleno de puntos;
+    // el que de verdad hace falta es el del día en curso, para saber de un
+    // vistazo que el mercado ya abrió y si abrió verde o rojo.
+    //
+    // El tamaño del marcador tiene un mínimo en lightweight-charts, así que
+    // por debajo de 0.3 no se ve más pequeño: por eso se reduce el número de
+    // marcadores en vez de achicarlos más.
     if (timeframe === "1h" && data.candles.length > 0) {
-      // Al invertir el gráfico las velas se voltean, así que el marcador se
-      // pasa arriba para que no le quede encima.
-      const position = invertScale ? "aboveBar" : "belowBar";
+      const ultima = data.candles[data.candles.length - 1];
+      const diaActual = Math.floor(ultima.time / 86400);
 
-      const markers: {
-        time: UTCTimestamp;
-        position: "aboveBar" | "belowBar";
-        color: string;
-        shape: "circle";
-        size: number;
-        text?: string;
-      }[] = [];
+      // Primera vela de ese día: la apertura.
+      const apertura =
+        data.candles.find((c) => Math.floor(c.time / 86400) === diaActual) ??
+        ultima;
 
-      let previousDay = NaN;
-      for (const c of data.candles) {
-        const day = Math.floor(c.time / 86400);
-        if (day === previousDay) continue;
-        previousDay = day;
-        markers.push({
-          time: c.time as unknown as UTCTimestamp,
-          position,
-          color: c.close >= c.open ? "#089981" : "#F23645",
+      candleSeriesRef.current.setMarkers([
+        {
+          time: apertura.time as unknown as UTCTimestamp,
+          // Al invertir el gráfico las velas se voltean, así que el marcador
+          // se pasa arriba para que no le quede encima.
+          position: invertScale ? "aboveBar" : "belowBar",
+          color: apertura.close >= apertura.open ? "#089981" : "#F23645",
           shape: "circle",
-          // Bien pequeño: marca la vela sin robarle protagonismo (por defecto
-          // es 1 y quedaba demasiado gordo).
           size: 0.3,
-        });
-      }
-
-      // La palabra "apertura" solo en el gráfico normal: al invertirlo, las
-      // velas se voltean sobre el marcador y el texto queda ilegible. El punto
-      // de color, que es la señal que de verdad importa, se mantiene siempre.
-      if (markers.length > 0 && !invertScale) {
-        markers[markers.length - 1].text = "apertura";
-      }
-
-      candleSeriesRef.current.setMarkers(markers);
+          // El texto solo en el gráfico normal: al invertirlo queda debajo de
+          // las velas volteadas y no se lee.
+          text: invertScale ? undefined : "apertura",
+        },
+      ]);
     } else {
       candleSeriesRef.current.setMarkers([]);
     }
