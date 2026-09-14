@@ -202,6 +202,29 @@ function toUnixSeconds(datetime: string): number {
 // El desfase entre UTC y la hora de Nueva York (o la de Colombia) siempre es
 // de horas enteras, así que agrupar por hora de UTC da exactamente los mismos
 // baldes que agrupar por hora local — no hace falta convertir zonas.
+//
+// La vela de apertura SIEMPRE abre balde propio, aunque comparta hora de reloj
+// con otra. Importa cuando se activen los datos de pre-mercado: la vela de las
+// 9:00 y la de la apertura de las 9:30 caen las dos en la hora 13 de UTC, y sin
+// esta salvedad se fusionarían — borrando justo la primera vela del día, que es
+// la que se mira para saber si el mercado abrió verde o rojo.
+
+// Se crea una sola vez: construir un Intl.DateTimeFormat por cada vela sería
+// caro, y aquí se recorren cientos en cada petición.
+const NY_HOUR_MINUTE = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function isSessionOpen(timeSeconds: number): boolean {
+  const parts = NY_HOUR_MINUTE.formatToParts(new Date(timeSeconds * 1000));
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return Number(get("hour")) % 24 === 9 && Number(get("minute")) === 30;
+}
+
 function aggregateToClockHour(candles: Candle[]): Candle[] {
   const out: Candle[] = [];
   let bucket = NaN;
@@ -209,7 +232,7 @@ function aggregateToClockHour(candles: Candle[]): Candle[] {
   for (const c of candles) {
     const hour = Math.floor(c.time / 3600);
 
-    if (hour !== bucket) {
+    if (hour !== bucket || isSessionOpen(c.time)) {
       bucket = hour;
       // La marca de tiempo del balde es la de su primera vela, no la hora en
       // punto: así la vela de apertura queda rotulada 9:30 (8:30 en Colombia)
@@ -457,3 +480,4 @@ export async function getExtendedQuote(symbol: string): Promise<ExtendedQuote> {
         : null,
   };
 }
+
