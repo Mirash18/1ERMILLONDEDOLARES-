@@ -11,7 +11,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { CandleSeries } from "@/lib/marketData";
+import type { CandleSeries, ExtendedQuote } from "@/lib/marketData";
 
 const SYMBOLS = ["SPY", "META", "GLD"] as const;
 
@@ -190,6 +190,14 @@ function formatCrosshairTime(time: number, intraday: boolean): string {
   const fecha = `${t.day} ${MESES[t.month]} ${t.year}`;
   return intraday ? `${fecha}  ${pad2(t.hours)}:${pad2(t.minutes)}` : fecha;
 }
+
+// Cómo se rotula la insignia de fuera de sesión, igual que el "Pre-market"
+// de TradingView: antes de abrir dice PRE, después de cerrar dice CIERRE.
+const SESSION_LABEL: Record<string, string> = {
+  pre: "PRE",
+  post: "CIERRE",
+  closed: "CIERRE",
+};
 
 // Convierte la posición en píxeles del último precio (o null si aún no se
 // puede calcular) en el "top" que le corresponde a la insignia, pegada justo
@@ -373,6 +381,8 @@ export function CandleChart() {
   // En qué altura (px) del panel cae el último precio — la insignia de
   // "próxima vela" se posiciona con esto para quedar pegada al precio.
   const [priceY, setPriceY] = useState<number | null>(null);
+  // Último precio fuera de sesión — hacia dónde viene abriendo el mercado.
+  const [extended, setExtended] = useState<ExtendedQuote | null>(null);
 
   const palette = PALETTES[theme];
 
@@ -584,6 +594,30 @@ export function CandleChart() {
     dataRef.current = data;
   }, [data]);
 
+  // Pre-mercado / after-hours. Se refresca UNA VEZ POR HORA a propósito: el
+  // dato no necesita ir al segundo y así casi no consume créditos de la API.
+  // El servidor además solo llama a Twelve Data fuera de la sesión regular.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/premarket?symbol=${symbol}`);
+        const json: ExtendedQuote = await res.json();
+        if (!cancelled) setExtended(json);
+      } catch {
+        if (!cancelled) setExtended(null);
+      }
+    }
+
+    load();
+    const id = setInterval(load, 60 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [symbol]);
+
   // Los formateadores del eje se vuelven a aplicar cada vez que cambia el
   // marco de tiempo. Es importante que sean funciones nuevas: lightweight-
   // charts guarda en caché las etiquetas ya calculadas, y si se le deja la
@@ -712,6 +746,35 @@ export function CandleChart() {
             Bollinger (20, 2σ)
           </span>
         )}
+
+        {/* Hacia dónde viene abriendo el mercado. Solo aparece fuera de la
+            sesión regular y cuando el plan de datos entrega precio extendido. */}
+        {extended && extended.price !== null && extended.session !== "regular" && (
+          <span
+            className="ml-auto flex items-center gap-2 rounded px-2 py-0.5"
+            style={{ backgroundColor: palette.badgeBg }}
+            title={
+              extended.timestamp
+                ? `Último precio fuera de sesión: ${formatCrosshairTime(extended.timestamp, true)}`
+                : undefined
+            }
+          >
+            <span className="opacity-70">
+              {SESSION_LABEL[extended.session] ?? "FUERA DE SESIÓN"}
+            </span>
+            <span>{extended.price.toFixed(2)}</span>
+            {extended.percentChange !== null && (
+              <span
+                style={{
+                  color: extended.percentChange >= 0 ? "#089981" : "#F23645",
+                }}
+              >
+                {extended.percentChange >= 0 ? "+" : ""}
+                {extended.percentChange.toFixed(2)}%
+              </span>
+            )}
+          </span>
+        )}
       </div>
 
       <div className="relative">
@@ -754,3 +817,4 @@ export function CandleChart() {
     </div>
   );
 }
+
