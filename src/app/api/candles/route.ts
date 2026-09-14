@@ -27,6 +27,10 @@ export async function GET(request: Request) {
     );
   }
 
-  const series = await getCandles(symbol, interval);
+  // El navegador pide `fresh=1` justo al cruzar el cambio de hora, para que
+  // la vela nueva salga al instante sin esperar al caché del servidor.
+  const fresh = searchParams.get("fresh") === "1";
+
+  const series = await getCandles(symbol, interval, 180, fresh);
   return NextResponse.json(series);
 }
