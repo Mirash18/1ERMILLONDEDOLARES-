@@ -302,12 +302,16 @@ function IndicatorsDropdown({
   onToggleVolume,
   showBollinger,
   onToggleBollinger,
+  invertScale,
+  onToggleInvert,
   palette,
 }: {
   showVolume: boolean;
   onToggleVolume: () => void;
   showBollinger: boolean;
   onToggleBollinger: () => void;
+  invertScale: boolean;
+  onToggleInvert: () => void;
   palette: Palette;
 }) {
   const [open, setOpen] = useState(false);
@@ -357,6 +361,13 @@ function IndicatorsDropdown({
             <input type="checkbox" checked={showBollinger} onChange={onToggleBollinger} />
             Bandas de Bollinger
           </label>
+          <label
+            className="flex cursor-pointer items-center gap-2 px-3 py-2 font-mono text-xs"
+            style={{ color: palette.buttonText }}
+          >
+            <input type="checkbox" checked={invertScale} onChange={onToggleInvert} />
+            Invertir gráfico
+          </label>
         </div>
       )}
     </div>
@@ -369,6 +380,7 @@ export function CandleChart() {
   const [theme, setTheme] = useState<Theme>("dark");
   const [showVolume, setShowVolume] = useState(true);
   const [showBollinger, setShowBollinger] = useState(false);
+  const [invertScale, setInvertScale] = useState(false);
   const [data, setData] = useState<CandleSeries | null>(null);
   const [loading, setLoading] = useState(true);
   // Empieza en null a propósito: si se calculara con Date.now() aquí mismo,
@@ -565,6 +577,14 @@ export function CandleChart() {
     requestAnimationFrame(updatePriceY);
   }, [showBollinger, updatePriceY]);
 
+  // Voltea la escala de precio, como el "Invert scale" de TradingView. Al
+  // invertir, el último precio cae en otra altura del panel, así que se
+  // recalcula la posición de la insignia un frame después.
+  useEffect(() => {
+    chartRef.current?.applyOptions({ rightPriceScale: { invertScale } });
+    requestAnimationFrame(updatePriceY);
+  }, [invertScale, updatePriceY]);
+
   // Carga los datos cada vez que cambia el símbolo o el marco de tiempo.
   useEffect(() => {
     let cancelled = false;
@@ -670,12 +690,55 @@ export function CandleChart() {
     bbUpperRef.current?.setData(toLinePoints(data.candles, data.bbUpper));
     bbLowerRef.current?.setData(toLinePoints(data.candles, data.bbLower));
 
+    // Marca la vela de apertura de cada día en el marco intradía. Es la vela
+    // de media hora con la que arranca la sesión (8:30 en Colombia), y es la
+    // que se mira para saber si el mercado abrió verde o rojo. El punto va
+    // del color de esa vela, y la del día más reciente lleva además la
+    // palabra "apertura" para ubicarla de una.
+    if (timeframe === "1h" && data.candles.length > 0) {
+      // Al invertir el gráfico las velas se voltean, así que el marcador se
+      // pasa arriba para que no le quede encima.
+      const position = invertScale ? "aboveBar" : "belowBar";
+
+      const markers: {
+        time: UTCTimestamp;
+        position: "aboveBar" | "belowBar";
+        color: string;
+        shape: "circle";
+        text?: string;
+      }[] = [];
+
+      let previousDay = NaN;
+      for (const c of data.candles) {
+        const day = Math.floor(c.time / 86400);
+        if (day === previousDay) continue;
+        previousDay = day;
+        markers.push({
+          time: c.time as unknown as UTCTimestamp,
+          position,
+          color: c.close >= c.open ? "#089981" : "#F23645",
+          shape: "circle",
+        });
+      }
+
+      // La palabra "apertura" solo en el gráfico normal: al invertirlo, las
+      // velas se voltean sobre el marcador y el texto queda ilegible. El punto
+      // de color, que es la señal que de verdad importa, se mantiene siempre.
+      if (markers.length > 0 && !invertScale) {
+        markers[markers.length - 1].text = "apertura";
+      }
+
+      candleSeriesRef.current.setMarkers(markers);
+    } else {
+      candleSeriesRef.current.setMarkers([]);
+    }
+
     chartRef.current?.timeScale().fitContent();
 
     // Un frame después, para que el autoscale del precio ya haya aplicado
     // antes de calcular dónde cae el último precio en el panel.
     requestAnimationFrame(updatePriceY);
-  }, [data, updatePriceY]);
+  }, [data, timeframe, invertScale, updatePriceY]);
 
   const secondsToNextCandle =
     nowSeconds === null ? null : nextCandleBoundary(nowSeconds, timeframe) - nowSeconds;
@@ -710,6 +773,8 @@ export function CandleChart() {
             onToggleVolume={() => setShowVolume((v) => !v)}
             showBollinger={showBollinger}
             onToggleBollinger={() => setShowBollinger((v) => !v)}
+            invertScale={invertScale}
+            onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
           />
           <button
