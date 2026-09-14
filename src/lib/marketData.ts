@@ -191,6 +191,43 @@ function toUnixSeconds(datetime: string): number {
   return Math.floor(new Date(iso).getTime() / 1000);
 }
 
+// ProRealTime, Investing y TradingView no anclan la vela horaria a la
+// apertura del mercado (9:30 en Nueva York) sino al reloj: la primera vela
+// del día es parcial — va de 9:30 a 10:00 — y de ahí en adelante van
+// completas en 10:00, 11:00, 12:00… Twelve Data, en cambio, entrega la hora
+// anclada a la apertura (9:30, 10:30, 11:30…). Para que nuestro marco "Hora"
+// se vea igual que en esas plataformas se piden velas de 30 minutos y se
+// agrupan aquí por hora de reloj.
+//
+// El desfase entre UTC y la hora de Nueva York (o la de Colombia) siempre es
+// de horas enteras, así que agrupar por hora de UTC da exactamente los mismos
+// baldes que agrupar por hora local — no hace falta convertir zonas.
+function aggregateToClockHour(candles: Candle[]): Candle[] {
+  const out: Candle[] = [];
+  let bucket = NaN;
+
+  for (const c of candles) {
+    const hour = Math.floor(c.time / 3600);
+
+    if (hour !== bucket) {
+      bucket = hour;
+      // La marca de tiempo del balde es la de su primera vela, no la hora en
+      // punto: así la vela de apertura queda rotulada 9:30 (8:30 en Colombia)
+      // y no 9:00, que es justo como se ve en ProRealTime.
+      out.push({ ...c });
+      continue;
+    }
+
+    const last = out[out.length - 1];
+    last.high = Math.max(last.high, c.high);
+    last.low = Math.min(last.low, c.low);
+    last.close = c.close;
+    last.volume += c.volume;
+  }
+
+  return out;
+}
+
 export async function getCandles(
   symbol: string,
   interval: string = "1day",
@@ -212,9 +249,18 @@ export async function getCandles(
     return { ...empty, error: "TWELVEDATA_API_KEY no configurada en el servidor" };
   }
 
+  // El marco "Hora" se arma agrupando velas de 30 minutos (ver
+  // aggregateToClockHour), así que a Twelve Data se le pide 30min y el doble
+  // de velas para cubrir el mismo tramo de historia. Cuesta lo mismo: Twelve
+  // Data cobra por llamada, no por vela.
+  const isHourly = interval === "1h";
+  const requestedInterval = isHourly ? "30min" : interval;
+  const requestedOutputsize = isHourly ? outputsize * 2 : outputsize;
+
   const url =
     `${TWELVE_DATA_TIME_SERIES_URL}?symbol=${encodeURIComponent(symbol)}` +
-    `&interval=${encodeURIComponent(interval)}&outputsize=${outputsize}` +
+    `&interval=${encodeURIComponent(requestedInterval)}` +
+    `&outputsize=${requestedOutputsize}` +
     `&timezone=UTC&apikey=${apiKey}`;
 
   let res: Response;
@@ -253,7 +299,7 @@ export async function getCandles(
   // cronológico ascendente.
   const values = [...(data.values as RawValue[])].reverse();
 
-  const candles: Candle[] = values.map((v) => ({
+  const rawCandles: Candle[] = values.map((v) => ({
     time: toUnixSeconds(v.datetime),
     open: Number(v.open),
     high: Number(v.high),
@@ -261,6 +307,11 @@ export async function getCandles(
     close: Number(v.close),
     volume: Number(v.volume),
   }));
+
+  // Las medias móviles y las Bandas de Bollinger se calculan sobre las velas
+  // ya agrupadas — si se calcularan sobre las de 30 minutos darían otro
+  // resultado y no coincidirían con lo que se ve en el gráfico.
+  const candles = isHourly ? aggregateToClockHour(rawCandles) : rawCandles;
 
   const closes = candles.map((c) => c.close);
   const bb = bollingerBands(closes, 20, 2);
