@@ -48,21 +48,64 @@ Hay una variante clara equivalente para quien prefiera tema claro en su
 navegador — mismo criterio de contraste, ver el bloque
 `@media (prefers-color-scheme: light)`.
 
-## Cómo va a fluir el acceso pagado (diseño, aún no implementado)
+## Cómo va a fluir el acceso pagado (Fase 3, en construcción)
 
-Esto es el diseño que se va a implementar en la Fase 3, dejado por
-escrito de una vez para que quede claro cómo va a funcionar por dentro:
+**Decisión de septiembre de 2026: sin base de datos propia.** Se evaluó
+montar Postgres para guardar usuarios y estado de suscripción, y se
+descartó: es la pieza más lenta de montar, hay que mantenerla, respaldarla
+y es un servicio más que se puede caer. En su lugar:
 
-1. El usuario se suscribe → Stripe cobra los $25/mes.
-2. Stripe notifica al servidor por webhook (`/api/webhooks/stripe`)
-   cuando el pago se confirma, falla o se cancela.
-3. El servidor actualiza el estado de la cuenta en la base de datos
-   (`activo` / `vencido`).
-4. Cada vez que el navegador pide datos del universo S&P 500 / Nasdaq,
-   el servidor revisa ese estado **antes** de servir el dato — nunca se
-   confía en lo que diga el navegador sobre si el usuario pagó o no.
-5. El mismo estado se usa para dar o quitar acceso a las clases en
-   Vimeo (Fase 4).
+- **Clerk** guarda *quién eres* — registro, login, contraseña, entrar con
+  Google, recuperación. Su plan gratuito cubre 50.000 usuarios activos al
+  mes, muy por encima de los ~1.000 de la comunidad.
+- **Stripe** guarda *si estás al día* — cobros, renovaciones, bajas, y el
+  historial completo.
+- El estado de suscripción vive en los **metadatos del usuario de Clerk**,
+  que hacen de base de datos mínima sin serlo.
+
+El flujo queda así:
+
+1. El usuario se registra con Clerk y se suscribe → Stripe cobra los $25/mes.
+2. Stripe notifica al servidor por webhook (`/api/webhooks/stripe`) cuando el
+   pago se confirma, falla o se cancela.
+3. Ese webhook escribe `suscripcion: "activa"` (o la quita) en los metadatos
+   del usuario en Clerk.
+4. Cada vez que el navegador pide algo de pago, el servidor revisa ese estado
+   **antes** de servir el dato — nunca se confía en lo que diga el navegador
+   sobre si el usuario pagó o no.
+5. El mismo estado se usa para dar o quitar acceso a las clases en Vimeo
+   (Fase 4).
+
+Toda esa decisión está centralizada en `src/lib/subscription.ts`. Es la única
+pieza que dice si alguien puede pasar, y **falla hacia el lado seguro**: si
+las llaves no están configuradas, o desaparecen, o se escriben mal, responde
+`sin-configurar` y no deja entrar a nadie, en vez de abrirse por defecto.
+
+La página de la membresía está en `/suscripcion`. Mientras no haya llaves, el
+botón sale desactivado. A propósito, esa página separa **"Disponible ahora"**
+de **"En camino"** con las fases escritas: no se le cobra a nadie por algo que
+todavía no puede usar.
+
+**Llaves que hay que poner en Vercel** (las pega Alejo, nunca viajan por el
+chat): `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PRICE_ID`.
+El código de Clerk **no se integra hasta que estén puestas**: si se sube
+antes, la compilación falla y se cae el sitio que ya está en producción.
+
+## Herramientas de dibujo (decisión de septiembre de 2026)
+
+Alejo pidió las herramientas de dibujo que tiene en ProRealTime — líneas de
+tendencia, horizontales, canales, texto, rectángulos, flechas.
+`lightweight-charts` **no las trae y no se le pueden añadir**: es la versión
+ligera de TradingView, pensada solo para pintar series. Construirlas a mano
+sería semanas de trabajo y quedarían peor.
+
+La vía elegida es **TradingView Advanced Charts**: es gratuita a cambio de
+mantener visible el logo de TradingView, trae 80+ herramientas de dibujo y
+100+ indicadores, y se conecta a nuestra API de velas mediante un adaptador
+UDF. Como regalo, resuelve de paso que la comunidad vea la misma interfaz que
+ya conoce. Se solicitó a `platforms@tradingview.com` y está pendiente de
+aprobación.
 
 ## Datos de mercado (Fase 2 — completa)
 
