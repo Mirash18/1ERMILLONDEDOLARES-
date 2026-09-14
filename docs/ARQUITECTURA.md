@@ -181,6 +181,23 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
     la función responde sin precio y la insignia simplemente no aparece —
     el resto del gráfico sigue funcionando igual. El día que se suba de
     plan, se enciende sola sin tocar código.
+- **Vela de apertura marcada e inversión del gráfico (sept. 2026):**
+  - La vela de media hora con la que abre la sesión (8:30 en Colombia) ya
+    existía como vela propia, pero no se distinguía de las demás. Ahora lleva
+    un punto debajo, **verde si esa vela abrió al alza y rojo si abrió a la
+    baja** — que es justo la lectura de "primera vela verde / primera vela
+    roja". La del día más reciente lleva además la palabra "apertura".
+    Se dibuja con `setMarkers()` y solo en el marco "Hora".
+  - `isSessionOpen()` en `marketData.ts` obliga a que la vela de las 9:30 de
+    Nueva York abra siempre balde propio en la agrupación horaria. Sin esto,
+    el día que se activen los datos de pre-mercado la vela de las 9:00 y la de
+    apertura caerían en la misma hora de UTC (la 13) y se fusionarían,
+    borrando justo la vela que se quiere mirar.
+  - Casilla **"Invertir gráfico"** en el menú de Indicadores, equivalente al
+    "Invert scale" de TradingView (`rightPriceScale.invertScale`). Al
+    invertir, los marcadores se pasan arriba de la vela y se omite el texto
+    "apertura", que quedaría ilegible debajo de las velas volteadas; el punto
+    de color se mantiene. La insignia de precio se recoloca sola.
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
