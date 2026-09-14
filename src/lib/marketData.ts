@@ -254,7 +254,11 @@ function aggregateToClockHour(candles: Candle[]): Candle[] {
 export async function getCandles(
   symbol: string,
   interval: string = "1day",
-  outputsize: number = 180
+  outputsize: number = 180,
+  // `fresh` salta el caché del servidor. Se usa solo en el instante en que
+  // cambia la hora, para que la vela nueva aparezca al momento en vez de
+  // esperar a que expire el caché. Cuesta un crédito por cambio de hora.
+  fresh: boolean = false
 ): Promise<CandleSeries> {
   const empty: CandleSeries = {
     symbol,
@@ -286,14 +290,18 @@ export async function getCandles(
     `&outputsize=${requestedOutputsize}` +
     `&timezone=UTC&apikey=${apiKey}`;
 
+  // El marco intradía necesita refrescarse rápido mientras el mercado está
+  // abierto: si no, la vela en curso se ve congelada. Fuera de sesión, y en
+  // los marcos de día/semana/mes, no hace falta y así se ahorran créditos.
+  const revalidate =
+    isHourly && nyMarketSession() === "regular" ? 60 : 300;
+
   let res: Response;
   try {
-    res = await fetch(url, {
-      // Los marcos intradía se mueven más rápido que los diarios, pero 5 min
-      // de caché sigue siendo prudente para no agotar el plan gratuito
-      // (8 créditos/minuto, 800/día) en ningún marco de tiempo.
-      next: { revalidate: 300 },
-    });
+    res = await fetch(
+      url,
+      fresh ? { cache: "no-store" } : { next: { revalidate } }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "error de red";
     return { ...empty, error: message };
