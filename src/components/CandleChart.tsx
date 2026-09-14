@@ -585,18 +585,35 @@ export function CandleChart() {
     requestAnimationFrame(updatePriceY);
   }, [invertScale, updatePriceY]);
 
-  // Carga los datos cada vez que cambia el símbolo o el marco de tiempo.
+  // Descarta respuestas que lleguen tarde y fuera de orden — por ejemplo si
+  // se cambia de símbolo mientras una petición anterior sigue en vuelo.
+  const requestIdRef = useRef(0);
+
+  // Pide las velas y las pinta. No toca el estado de "Cargando…": de eso se
+  // encarga quien la llama, para que los refrescos de fondo no hagan
+  // parpadear el gráfico. `fresh` le dice al servidor que salte su caché.
+  const loadCandles = useCallback(
+    async (fresh = false) => {
+      const id = ++requestIdRef.current;
+      const res = await fetch(
+        `/api/candles?symbol=${symbol}&interval=${timeframe}` +
+          `${fresh ? "&fresh=1" : ""}&t=${Date.now()}`
+      );
+      const json: CandleSeries = await res.json();
+      if (id === requestIdRef.current) setData(json);
+    },
+    [symbol, timeframe]
+  );
+
+  // Carga inicial y cada vez que cambia el símbolo o el marco de tiempo. Esta
+  // sí muestra "Cargando…", porque el gráfico se va a repintar entero.
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    async function run() {
       setLoading(true);
       try {
-        const res = await fetch(
-          `/api/candles?symbol=${symbol}&interval=${timeframe}`
-        );
-        const json: CandleSeries = await res.json();
-        if (!cancelled) setData(json);
+        await loadCandles();
       } catch {
         if (!cancelled) setData(null);
       } finally {
@@ -604,11 +621,64 @@ export function CandleChart() {
       }
     }
 
-    load();
+    run();
     return () => {
       cancelled = true;
     };
-  }, [symbol, timeframe]);
+  }, [loadCandles]);
+
+  // Refresco de fondo mientras se mira el marco intradía, para que la vela en
+  // curso se vea moverse en vez de quedarse congelada.
+  useEffect(() => {
+    if (timeframe !== "1h") return;
+    const id = setInterval(() => {
+      loadCandles().catch(() => {});
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, [timeframe, loadCandles]);
+
+  // Justo al cruzar el cambio de hora se pide la vela nueva saltando el caché,
+  // para que aparezca al instante igual que en ProRealTime. Se reintenta un
+  // par de veces porque el proveedor tarda unos segundos en publicarla.
+  useEffect(() => {
+    if (timeframe !== "1h") return;
+
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    function scheduleNextBoundary() {
+      const now = Math.floor(Date.now() / 1000);
+      const boundary = nextCandleBoundary(now, "1h");
+      // +2 s de margen: pedirla en el segundo exacto suele llegar antes de que
+      // el proveedor haya cerrado la vela anterior.
+      const delay = Math.max((boundary - now) * 1000 + 2000, 1000);
+
+      timers.push(
+        setTimeout(() => {
+          if (cancelled) return;
+          loadCandles(true).catch(() => {});
+          timers.push(
+            setTimeout(() => {
+              if (!cancelled) loadCandles(true).catch(() => {});
+            }, 10 * 1000)
+          );
+          timers.push(
+            setTimeout(() => {
+              if (!cancelled) loadCandles(true).catch(() => {});
+            }, 30 * 1000)
+          );
+          scheduleNextBoundary();
+        }, delay)
+      );
+    }
+
+    scheduleNextBoundary();
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [timeframe, loadCandles]);
 
   useEffect(() => {
     dataRef.current = data;
@@ -705,6 +775,7 @@ export function CandleChart() {
         position: "aboveBar" | "belowBar";
         color: string;
         shape: "circle";
+        size: number;
         text?: string;
       }[] = [];
 
@@ -718,6 +789,9 @@ export function CandleChart() {
           position,
           color: c.close >= c.open ? "#089981" : "#F23645",
           shape: "circle",
+          // Bien pequeño: marca la vela sin robarle protagonismo (por defecto
+          // es 1 y quedaba demasiado gordo).
+          size: 0.3,
         });
       }
 
