@@ -137,6 +137,50 @@ escrito de una vez para que quede claro cómo va a funcionar por dentro:
     posición se limita (`clampBadgeTop()`) para que la insignia nunca
     se salga del panel por arriba o por abajo, y se mueve con una
     transición suave en vez de saltar de golpe.
+- **Marco "Hora" alineado al reloj y horas en zona local (sept. 2026):**
+  - Twelve Data ancla la vela horaria a la apertura del mercado: entrega
+    9:30, 10:30, 11:30… ProRealTime, Investing y TradingView la anclan al
+    reloj — una vela parcial de apertura (9:30–10:00) y de ahí en adelante
+    10:00, 11:00, 12:00… Para igualarlas, `getCandles()` pide ahora velas de
+    `30min` cuando el marco es `1h` y las agrupa por hora de reloj en
+    `aggregateToClockHour()` (`marketData.ts`). La marca de tiempo de cada
+    grupo es la de su primera vela, así que la de apertura queda rotulada
+    9:30 y no 9:00, igual que en ProRealTime.
+  - No cuesta créditos extra: Twelve Data cobra por llamada, no por vela, y
+    el caché de 5 minutos sigue igual.
+  - Las medias móviles y las Bandas de Bollinger se calculan **después** de
+    agrupar, para que coincidan con las velas que se ven en pantalla.
+  - Efecto secundario: la cuenta regresiva "Próxima vela en…" ahora sí es
+    correcta en el marco horario. Antes contaba hasta la hora en punto
+    mientras las velas cerraban a y media.
+  - El eje de tiempo se rotulaba en UTC (13:30 para la apertura). Ahora
+    `formatTickMark()` y `formatCrosshairTime()` (`CandleChart.tsx`) lo
+    muestran en la hora local del visitante — 8:30 desde Colombia — como
+    hacen ProRealTime e Investing. Las velas de día, semana y mes vienen
+    marcadas a las 00:00 UTC, así que esas se siguen leyendo en UTC: pasarlas
+    a hora local las correría al día anterior.
+  - Los formateadores se vuelven a aplicar con `applyOptions()` en cada
+    cambio de marco. Hace falta pasarle funciones nuevas porque
+    lightweight-charts cachea las etiquetas ya calculadas — si no, quedaban
+    velas sueltas rotuladas con la hora UTC entre las demás.
+- **Pre-mercado / after-hours (sept. 2026):** insignia al estilo del
+  "Pre-market" de TradingView que muestra hacia dónde viene abriendo el
+  mercado. Vive en `getExtendedQuote()` (`marketData.ts`) y en la ruta
+  `/api/premarket`.
+  - `nyMarketSession()` decide en qué tramo de la jornada de Nueva York
+    estamos — pre 04:00–09:30, regular 09:30–16:00, post 16:00–20:00, y
+    cerrado el resto — calculado con la zona horaria real de la bolsa, así
+    que el horario de verano se maneja solo. Probado contra 14 casos,
+    incluidos EDT, EST y fines de semana.
+  - Se refresca **una vez por hora** (caché de 3600 s en servidor y un
+    intervalo de una hora en el cliente) porque lo pidió Alejo para no
+    quemar créditos. Durante la sesión regular ni siquiera se llama a la
+    API: no hay nada extendido que mostrar y así el gasto es cero.
+  - **Requiere plan Pro (individual) o Venture (business):** el parámetro
+    `prepost` de Twelve Data no existe en el plan gratuito. Mientras tanto
+    la función responde sin precio y la insignia simplemente no aparece —
+    el resto del gráfico sigue funcionando igual. El día que se suba de
+    plan, se enciende sola sin tocar código.
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
@@ -151,3 +195,4 @@ más afectan la arquitectura:
 - Plan de Vimeo (OTT vs Enterprise).
 - Si se suma un método de pago local (PSE/Nequi vía Wompi o PayU) además
   de Stripe.
+
