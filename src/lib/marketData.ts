@@ -327,3 +327,133 @@ export async function getCandles(
     bbLower: bb.lower,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Pre-mercado / after-hours ("dónde va a amanecer el mercado")
+// ---------------------------------------------------------------------------
+
+export type MarketSession = "pre" | "regular" | "post" | "closed";
+
+export type ExtendedQuote = {
+  symbol: string;
+  session: MarketSession;
+  price: number | null;
+  change: number | null;
+  percentChange: number | null;
+  timestamp: number | null;
+  error?: string;
+};
+
+// En qué tramo de la jornada de Nueva York estamos en este momento. Se calcula
+// con la zona horaria real de la bolsa (no con la del servidor, que en Vercel
+// es UTC), así que el horario de verano lo maneja solo.
+//
+//   pre      04:00 – 09:30   (pre-mercado)
+//   regular  09:30 – 16:00   (sesión normal)
+//   post     16:00 – 20:00   (after-hours)
+//   closed   el resto, y los fines de semana
+//
+// Los festivos de la bolsa no se detectan: en esos días el precio extendido
+// simplemente no se mueve, que es un fallo inofensivo.
+export function nyMarketSession(now: Date = new Date()): MarketSession {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  const weekday = get("weekday");
+  if (weekday === "Sat" || weekday === "Sun") return "closed";
+
+  // Algunos entornos devuelven "24" para la medianoche.
+  const hours = Number(get("hour")) % 24;
+  const minutes = hours * 60 + Number(get("minute"));
+
+  if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) return "pre";
+  if (minutes >= 9 * 60 + 30 && minutes < 16 * 60) return "regular";
+  if (minutes >= 16 * 60 && minutes < 20 * 60) return "post";
+  return "closed";
+}
+
+/**
+ * Último precio fuera de la sesión regular, para mostrar hacia dónde viene
+ * abriendo el mercado — como el "Pre-market" de TradingView.
+ *
+ * Se cachea UNA HORA a propósito (lo pidió Alejo): el dato de pre-mercado no
+ * necesita refrescarse cada minuto y así el consumo de créditos es mínimo —
+ * una sola llamada por hora y por símbolo, y solo fuera de la sesión regular.
+ *
+ * OJO: el parámetro `prepost` de Twelve Data solo está disponible desde el
+ * plan Pro (individual) o Venture (business). Con el plan gratuito la llamada
+ * no devuelve los campos extendidos; en ese caso esta función responde sin
+ * precio y la insignia simplemente no se muestra, sin romper nada más.
+ */
+export async function getExtendedQuote(symbol: string): Promise<ExtendedQuote> {
+  const session = nyMarketSession();
+  const base: ExtendedQuote = {
+    symbol,
+    session,
+    price: null,
+    change: null,
+    percentChange: null,
+    timestamp: null,
+  };
+
+  // Durante la sesión regular no hay nada extendido que mostrar: el precio
+  // normal ya va en la tira de cotizaciones. Además así no se gastan créditos.
+  if (session === "regular") return base;
+
+  const apiKey = process.env.TWELVEDATA_API_KEY;
+  if (!apiKey) {
+    return { ...base, error: "TWELVEDATA_API_KEY no configurada en el servidor" };
+  }
+
+  const url =
+    `${TWELVE_DATA_QUOTE_URL}?symbol=${encodeURIComponent(symbol)}` +
+    `&prepost=true&apikey=${apiKey}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { next: { revalidate: 3600 } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "error de red";
+    return { ...base, error: message };
+  }
+
+  if (!res.ok) {
+    return { ...base, error: `Twelve Data respondió ${res.status}` };
+  }
+
+  const data = await res.json();
+
+  if (data.status === "error") {
+    return { ...base, error: data.message ?? "sin datos" };
+  }
+
+  // Con el plan gratuito estos campos no vienen. No es un error que haya que
+  // mostrarle al usuario: simplemente no hay dato extendido disponible.
+  if (data.extended_price === undefined) {
+    return { ...base, error: "el plan actual no incluye datos de pre-mercado" };
+  }
+
+  return {
+    symbol,
+    session,
+    price: Number(data.extended_price),
+    change:
+      data.extended_change !== undefined ? Number(data.extended_change) : null,
+    percentChange:
+      data.extended_percent_change !== undefined
+        ? Number(data.extended_percent_change)
+        : null,
+    timestamp:
+      data.extended_timestamp !== undefined
+        ? Number(data.extended_timestamp)
+        : null,
+  };
+}
