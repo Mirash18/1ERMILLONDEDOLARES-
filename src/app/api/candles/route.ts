@@ -3,10 +3,11 @@ import { getCandles } from "@/lib/marketData";
 
 // Solo el universo gratuito puede pedirse aquí. El universo pagado (Fase 3)
 // va en una ruta aparte, protegida por la verificación de suscripción.
-// SPX y GSPC están aquí de forma provisional, solo para comprobar si el plan
-// actual de Twelve Data sirve el índice S&P 500 (su web dice "coming soon").
-// Si no responden, se quitan.
-const FREE_SYMBOLS = new Set(["SPY", "META", "GLD", "SPX", "GSPC"]);
+// Se probó a pedir el índice S&P 500 (símbolos SPX y GSPC) y Twelve Data
+// devuelve 404: su plan actual no sirve índices, solo acciones y ETFs. Por eso
+// el gráfico muestra SPY, que es el ETF que replica al índice a una décima
+// parte de su valor.
+const FREE_SYMBOLS = new Set(["SPY", "META", "GLD"]);
 
 // Marcos de tiempo que el selector del gráfico puede pedir.
 const ALLOWED_INTERVALS = new Set(["1h", "1day", "1week", "1month"]);
