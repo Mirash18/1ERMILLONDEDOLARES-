@@ -100,12 +100,20 @@ tendencia, horizontales, canales, texto, rectángulos, flechas.
 ligera de TradingView, pensada solo para pintar series. Construirlas a mano
 sería semanas de trabajo y quedarían peor.
 
-La vía elegida es **TradingView Advanced Charts**: es gratuita a cambio de
-mantener visible el logo de TradingView, trae 80+ herramientas de dibujo y
-100+ indicadores, y se conecta a nuestra API de velas mediante un adaptador
-UDF. Como regalo, resuelve de paso que la comunidad vea la misma interfaz que
-ya conoce. Se solicitó a `platforms@tradingview.com` y está pendiente de
-aprobación.
+La vía elegida es **TradingView Advanced Charts**: trae 80+ herramientas de
+dibujo y 100+ indicadores, y se conecta a nuestra API de velas mediante un
+adaptador UDF. Como regalo, resuelve de paso que la comunidad vea la misma
+interfaz que ya conoce. Se solicitó a `platforms@tradingview.com`.
+
+**Corrección (15 sept. 2026):** no es gratuita para este caso. TradingView
+respondió (Alvaro M. Roo, Customer Success Manager) que, al ser un uso con
+**suscripción de pago**, se necesita **licencia comercial** — la variante
+gratuita (con su logo visible) es solo para uso no comercial. Antes de
+hablar de precio piden firmar un **MNDA** (acuerdo de confidencialidad) con
+los datos de la empresa: nombre legal, dirección, sitio web, correo de
+notificaciones, y nombre + cargo de quien firma. Pendiente de que Alejo
+confirme si hay una entidad legal constituida para el proyecto — sin eso no
+se puede firmar el MNDA ni seguir con la cotización de la licencia.
 
 ## Datos de mercado (Fase 2 — completa)
 
@@ -381,6 +389,35 @@ switching to a paid plan that will remove daily limits"* — un plan pago no
 solo habilita el uso público (licencia "display", ya lo sabíamos), sino que
 además quita el límite de 800/día por completo. Mientras siga en el plan
 gratuito, el límite se puede volver a agotar con facilidad durante pruebas.
+
+## Caché persistente de datos de mercado — Redis/Upstash (15 sept. 2026)
+
+A raíz del incidente de arriba, se agregó una caché de verdad — no solo la
+caché de `fetch` de Next.js, que no estaba evitando los pedidos repetidos.
+
+- **Dónde vive:** Upstash for Redis, instalado como integración de Vercel
+  (Storage → `candle-cache`), conectado al proyecto en Production, Preview
+  y Development. Las llaves (`REDIS_KV_REST_API_URL`,
+  `REDIS_KV_REST_API_TOKEN`) las crea la propia integración — no hay que
+  copiarlas a mano.
+- **Cómo funciona** (`src/lib/marketCache.ts`): `getCandles()` y
+  `getQuotes()` (`src/lib/marketData.ts`) primero miran si ya hay algo
+  guardado y qué tan viejo es. Si el mercado está en sesión regular, el
+  dato vale 5 minutos (igual al refresco del navegador, ver el incidente de
+  arriba). **Fuera de sesión regular, vale 12 horas** — el precio de cierre
+  no cambia hasta que abre de nuevo, así que servirlo desde la caché es
+  exactamente lo mismo que pedirlo de nuevo, pero gratis. Esto es lo que
+  permite ver las velas del día después del cierre sin gastar más créditos.
+- Sin las llaves de Redis puestas, se comporta como si no hubiera caché
+  (siempre pide a Twelve Data) — mismo criterio de fallar en silencio del
+  resto del proyecto, nunca romper el sitio por esto.
+- No es historial permanente/indefinido: cada símbolo+marco guarda solo su
+  último resultado (se sobrescribe), con un TTL máximo de 12h. Si algún día
+  se quiere guardar histórico completo (para backtesting, por ejemplo) hay
+  que pasar a algo con más estructura (Postgres) — ver "Decisiones
+  pendientes".
+- Plan gratuito de Upstash: 500.000 comandos/mes, más que suficiente para
+  esta escala.
 
 ## Decisiones pendientes
 

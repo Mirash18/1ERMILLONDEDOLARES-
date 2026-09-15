@@ -11,6 +11,8 @@
  * plan que sí autorice uso público ("display").
  */
 
+import { getCached, setCached, cacheTtlSeconds } from "./marketCache";
+
 export type Quote = {
   symbol: string;
   price: number | null;
@@ -34,6 +36,15 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
       isMarketOpen: null,
       error: "TWELVEDATA_API_KEY no configurada en el servidor",
     }));
+  }
+
+  // Caché persistente (ver marketCache.ts): con el mercado cerrado, el
+  // precio guardado no cambia — se sirve tal cual, sin gastar más créditos.
+  const cacheKey = `quotes:${symbols.join(",")}`;
+  const session = nyMarketSession();
+  const cached = await getCached<Quote[]>(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000) {
+    return cached.value;
   }
 
   const url = `${TWELVE_DATA_QUOTE_URL}?symbol=${encodeURIComponent(
@@ -77,7 +88,7 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   const bySymbol: Record<string, Record<string, unknown>> =
     symbols.length === 1 ? { [symbols[0]]: data } : data;
 
-  return symbols.map((symbol) => {
+  const quotes = symbols.map((symbol) => {
     const entry = bySymbol?.[symbol];
     const entryError =
       typeof entry?.message === "string" ? entry.message : undefined;
@@ -107,6 +118,14 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
           : null,
     };
   });
+
+  // Solo se guarda si de verdad trajo algo — un error puntual de Twelve
+  // Data no debe quedar guardado como si fuera el precio real.
+  if (quotes.some((q) => q.price !== null)) {
+    await setCached(cacheKey, quotes, cacheTtlSeconds(session));
+  }
+
+  return quotes;
 }
 
 export type Candle = {
@@ -276,6 +295,21 @@ export async function getCandles(
     return { ...empty, error: "TWELVEDATA_API_KEY no configurada en el servidor" };
   }
 
+  // Caché persistente (ver marketCache.ts): con el mercado cerrado, las
+  // velas del día ya no cambian — se sirven desde acá, sin gastar más
+  // créditos, hasta que abra de nuevo. `fresh` la salta a propósito (se usa
+  // justo al cruzar el cambio de hora, para no quedarse con la vela vieja).
+  // Asume que `outputsize` es siempre 180 (el único valor que pide el
+  // proyecto hoy) — si algún día varía, hay que meterlo en la llave.
+  const cacheKey = `candles:${symbol}:${interval}`;
+  const session = nyMarketSession();
+  if (!fresh) {
+    const cached = await getCached<CandleSeries>(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000) {
+      return cached.value;
+    }
+  }
+
   // El marco "Hora" se arma agrupando velas de 30 minutos (ver
   // aggregateToClockHour), así que a Twelve Data se le pide 30min y el doble
   // de velas para cubrir el mismo tramo de historia. Cuesta lo mismo: Twelve
@@ -293,8 +327,7 @@ export async function getCandles(
   // El marco intradía necesita refrescarse rápido mientras el mercado está
   // abierto: si no, la vela en curso se ve congelada. Fuera de sesión, y en
   // los marcos de día/semana/mes, no hace falta y así se ahorran créditos.
-  const revalidate =
-    isHourly && nyMarketSession() === "regular" ? 60 : 300;
+  const revalidate = isHourly && session === "regular" ? 60 : 300;
 
   let res: Response;
   try {
@@ -347,7 +380,7 @@ export async function getCandles(
   const closes = candles.map((c) => c.close);
   const bb = bollingerBands(closes, 20, 2);
 
-  return {
+  const result: CandleSeries = {
     symbol,
     candles,
     sma20: simpleMovingAverage(closes, 20),
@@ -357,6 +390,14 @@ export async function getCandles(
     bbUpper: bb.upper,
     bbLower: bb.lower,
   };
+
+  // Solo se guarda si de verdad trajo velas — no queremos que una respuesta
+  // vacía quede pegada en caché hasta por 12 horas.
+  if (result.candles.length > 0) {
+    await setCached(cacheKey, result, cacheTtlSeconds(session));
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
