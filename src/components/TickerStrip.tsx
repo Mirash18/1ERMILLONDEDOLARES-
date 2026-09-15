@@ -37,7 +37,14 @@ export function TickerStrip() {
     }
 
     load();
-    const id = setInterval(load, 30_000);
+    // Cada refresco cuesta ~1 crédito de Twelve Data por símbolo (3 aquí).
+    // A 30s esta sola tira gastaba ~360 créditos/hora — con el plan
+    // gratuito (800/día) eso agota el día en un par de horas con una sola
+    // pestaña abierta (pasó de verdad el 15 de sept. de 2026). 5 minutos
+    // baja el gasto a ~36 créditos/hora y sigue siendo un precio razonablemente
+    // fresco para una tira informativa. Al subir a un plan pago de Twelve
+    // Data (quita el límite diario) esto se puede achicar de nuevo.
+    const id = setInterval(load, 5 * 60_000);
     return () => {
       cancelled = true;
       clearInterval(id);

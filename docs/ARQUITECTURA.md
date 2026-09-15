@@ -354,6 +354,34 @@ nombre del plan (`plan: "completo" | "clases" | null`) y que `getAccess()`
 devuelva cuál es, en vez de solo si hay acceso o no. Pendiente de diseño,
 no implementado todavía.
 
+## Incidente — se agotó el crédito diario de Twelve Data (15 sept. 2026)
+
+El sitio dejó de traer velas y cotizaciones (`Twelve Data respondió 429` en
+todas partes). No fue un bug: Twelve Data devolvió *"You have run out of
+API credits for the day. 978 API credits were used, with the current limit
+being 800."* — el plan gratuito.
+
+Causa: el refresco automático del lado del navegador era demasiado
+agresivo para 800 créditos/día. Con una sola pestaña abierta:
+
+- `TickerStrip` pedía 3 símbolos cada 30s → ~360 créditos/hora ella sola.
+- `CandleChart` en marco "Hora" refrescaba cada 60s → ~60 créditos/hora más.
+
+Eso agota el límite diario en menos de dos horas con un solo visitante — con
+varias personas probando el sitio a la vez (como pasó) se va en minutos.
+
+**Mitigación aplicada:** se bajó la frecuencia a 5 minutos en ambos
+(`TickerStrip.tsx`, `CandleChart.tsx`) — baja el gasto a ~48 créditos/hora
+por pestaña, unas 8 veces menos. Sigue sin ser una solución definitiva: con
+varias pestañas o visitantes reales el límite se puede volver a agotar.
+
+**Solución real, ya documentada más arriba en "Datos de mercado":** subir a
+un plan de pago de Twelve Data. Su propio mensaje de error lo dice: *"consider
+switching to a paid plan that will remove daily limits"* — un plan pago no
+solo habilita el uso público (licencia "display", ya lo sabíamos), sino que
+además quita el límite de 800/día por completo. Mientras siga en el plan
+gratuito, el límite se puede volver a agotar con facilidad durante pruebas.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

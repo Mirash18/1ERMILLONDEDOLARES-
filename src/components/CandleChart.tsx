@@ -695,11 +695,19 @@ export function CandleChart() {
 
   // Refresco de fondo mientras se mira el marco intradía, para que la vela en
   // curso se vea moverse en vez de quedarse congelada.
+  //
+  // Cada refresco cuesta 1 crédito de Twelve Data. A 60s el plan gratuito
+  // (800 créditos/día) se agota en menos de 2 horas con una sola pestaña
+  // abierta — pasó de verdad el 15 de sept. de 2026 (978/800 usados). Con
+  // 5 minutos una pestaña sola gasta ~12 créditos/hora en vez de ~60, y
+  // sigue viéndose "vivo" para efectos prácticos. Al subir a un plan pago de
+  // Twelve Data (que además quita el límite diario) esto se puede volver a
+  // bajar sin miedo.
   useEffect(() => {
     if (timeframe !== "1h") return;
     const id = setInterval(() => {
       loadCandles().catch(() => {});
-    }, 60 * 1000);
+    }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [timeframe, loadCandles]);
 
