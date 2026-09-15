@@ -298,6 +298,62 @@ Stripe cuando exista, todavía pendiente.
 Pendiente de Fase 3: el webhook `/api/webhooks/stripe` y las llaves de
 Stripe — cuando estén, `paymentsConfigured()` se enciende solo.
 
+## Universo pagado y marco "Hora" por defecto (sept. 2026)
+
+- **Marco "Hora" por defecto:** `CandleChart` arrancaba en "Día". Ahora
+  arranca en "Hora" (es el marco que la comunidad mira día a día) y además,
+  en ese marco, el gráfico ya no hace `fitContent()` sobre los 180 días de
+  historia que se piden de fondo para las medias móviles — se calcula el
+  rango de la sesión más reciente (mismo criterio que ya usaba el marcador
+  de "apertura") y se centra ahí con `setVisibleRange()`. Así siempre abre
+  mostrando el día en curso (o el último día hábil si el mercado está
+  cerrado), no seis meses de velas horarias amontonadas.
+- **Universo pagado (S&P 500 + Nasdaq-100):** `src/lib/universe.ts` trae la
+  lista de símbolos — es una foto amplia pero **no exhaustiva ni oficial**
+  de esos dos índices (ver el comentario en el archivo); sirve para cubrir
+  la gran mayoría de lo que alguien va a buscar, pendiente de reemplazarla
+  algún día por una fuente que se actualice sola.
+- `/api/universe` le dice al navegador qué símbolos puede pedir — el
+  gratuito siempre, el pagado solo si `getAccess()` (Clerk) confirma
+  suscripción activa. `/api/candles` vuelve a comprobar lo mismo del lado
+  del servidor antes de servir cualquier símbolo pagado — el navegador
+  nunca decide su propio acceso, ni siquiera si alguien edita el estado de
+  React a mano.
+- El selector de símbolo en `CandleChart` ahora es dinámico (ya no una
+  lista fija de 3) y `SelectDropdown` aprendió a mostrar un buscador cuando
+  hay más de 12 opciones — con 300+ símbolos un menú plano sería inusable.
+- `TickerStrip` deja de mostrar "Con suscripción" fijo en S&P 500 / Nasdaq:
+  si `/api/quotes` dice `allowed: true` (misma verificación de Clerk),
+  cambia a "Desbloqueado".
+
+## Pendiente — herramientas de dibujo detrás de suscripción
+
+Cuando TradingView apruebe el acceso a Advanced Charts (solicitado a
+`platforms@tradingview.com`, ver más arriba), las herramientas de dibujo
+(líneas de tendencia, canales, texto, etc.) deben quedar **detrás de la
+misma verificación de suscripción** que ya protege el universo pagado —
+no basta con que el widget esté disponible técnicamente, hay que
+condicionar su acceso a `getAccess().allowed` igual que en `/api/candles`.
+Todavía no hay nada que integrar (no ha llegado la aprobación), esto es
+solo la nota para cuando llegue.
+
+## Pendiente — más de un nivel de suscripción
+
+Alejo planea más de un plan de pago, no uno solo:
+
+- Un plan que da acceso a **todos los gráficos** (el universo pagado de
+  arriba) y a las **clases de Miguel Cortés** (Fase 4).
+- Un plan aparte, de otro valor, específico para algo tipo "inicio de
+  clases" — todavía sin nombre ni precio definitivo. Va a ir trayendo los
+  repositorios/recursos correspondientes para revisar más adelante.
+
+Hoy `subscription.ts` solo maneja un booleano (`activa` / no activa). Antes
+de construir esto hay que decidir cómo se modela más de un nivel — lo más
+simple sería guardar en los metadatos de Clerk no un booleano sino el
+nombre del plan (`plan: "completo" | "clases" | null`) y que `getAccess()`
+devuelva cuál es, en vez de solo si hay acceso o no. Pendiente de diseño,
+no implementado todavía.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

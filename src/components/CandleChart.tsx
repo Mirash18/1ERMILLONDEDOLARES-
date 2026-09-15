@@ -12,8 +12,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { CandleSeries, ExtendedQuote } from "@/lib/marketData";
-
-const SYMBOLS = ["SPY", "META", "GLD"] as const;
+import { FREE_SYMBOLS } from "@/lib/universe";
 
 const TIMEFRAMES = [
   { key: "1h", label: "Hora" },
@@ -229,15 +228,21 @@ function SelectDropdown<K extends string>({
   onChange,
   palette,
   align = "left",
+  // A partir de este número de opciones aparece un buscador arriba del
+  // menú — con 3 símbolos no hace falta, con 300+ (universo pagado) sí.
+  searchThreshold = 12,
 }: {
   value: K;
   options: readonly { key: K; label: string }[];
   onChange: (key: K) => void;
   palette: Palette;
   align?: "left" | "right";
+  searchThreshold?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -254,7 +259,21 @@ function SelectDropdown<K extends string>({
     };
   }, []);
 
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      // Un frame después de que el menú ya esté en el DOM.
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
+  }, [open]);
+
   const current = options.find((o) => o.key === value);
+  const searchable = options.length > searchThreshold;
+  const filtered = searchable && query.trim()
+    ? options.filter((o) =>
+        o.label.toLowerCase().includes(query.trim().toLowerCase())
+      )
+    : options;
 
   return (
     <div ref={ref} className="relative">
@@ -268,27 +287,48 @@ function SelectDropdown<K extends string>({
       </button>
       {open && (
         <div
-          className={`absolute top-full z-40 mt-1 min-w-[120px] overflow-hidden rounded border shadow-lg ${
+          className={`absolute top-full z-40 mt-1 min-w-[140px] overflow-hidden rounded border shadow-lg ${
             align === "right" ? "right-0" : "left-0"
           }`}
           style={{ backgroundColor: palette.buttonBg, borderColor: palette.wrapperBorder }}
         >
-          {options.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => {
-                onChange(opt.key);
-                setOpen(false);
-              }}
-              className="block w-full whitespace-nowrap px-3 py-1.5 text-left font-mono text-xs transition-colors"
-              style={{
-                backgroundColor: opt.key === value ? palette.buttonActiveBg : "transparent",
-                color: opt.key === value ? palette.buttonActiveText : palette.buttonText,
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {searchable && (
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar…"
+              className="w-full border-b bg-transparent px-3 py-1.5 font-mono text-xs outline-none"
+              style={{ borderColor: palette.wrapperBorder, color: palette.buttonText }}
+            />
+          )}
+          <div className="max-h-64 overflow-y-auto">
+            {filtered.length === 0 && (
+              <p
+                className="px-3 py-2 font-mono text-xs opacity-60"
+                style={{ color: palette.buttonText }}
+              >
+                Sin resultados
+              </p>
+            )}
+            {filtered.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => {
+                  onChange(opt.key);
+                  setOpen(false);
+                }}
+                className="block w-full whitespace-nowrap px-3 py-1.5 text-left font-mono text-xs transition-colors"
+                style={{
+                  backgroundColor: opt.key === value ? palette.buttonActiveBg : "transparent",
+                  color: opt.key === value ? palette.buttonActiveText : palette.buttonText,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -375,8 +415,14 @@ function IndicatorsDropdown({
 }
 
 export function CandleChart() {
-  const [symbol, setSymbol] = useState<(typeof SYMBOLS)[number]>("SPY");
-  const [timeframe, setTimeframe] = useState<TimeframeKey>("1day");
+  const [symbol, setSymbol] = useState<string>("SPY");
+  // "Hora" por defecto: es el marco que la comunidad mira día a día — que
+  // cada quien tenga que cambiarlo manualmente cada vez no tenía sentido.
+  const [timeframe, setTimeframe] = useState<TimeframeKey>("1h");
+  // Universo de símbolos que se puede elegir. Empieza con el gratuito nada
+  // más (nunca se asume acceso) y se completa con el pagado (S&P 500 /
+  // Nasdaq-100) si `/api/universe` confirma que hay suscripción activa.
+  const [symbols, setSymbols] = useState<string[]>([...FREE_SYMBOLS]);
   const [theme, setTheme] = useState<Theme>("dark");
   const [showVolume, setShowVolume] = useState(true);
   const [showBollinger, setShowBollinger] = useState(false);
@@ -420,6 +466,26 @@ export function CandleChart() {
     const lastClose = candles[candles.length - 1].close;
     const y = series.priceToCoordinate(lastClose);
     setPriceY(y);
+  }, []);
+
+  // Qué símbolos puede elegir quien está mirando. El servidor decide (según
+  // su sesión) si además del gratuito va también el universo pagado — el
+  // navegador solo pinta lo que le llega, nunca decide acceso por su cuenta.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/universe")
+      .then((res) => res.json())
+      .then((json: { free?: string[]; paid?: string[] }) => {
+        if (cancelled) return;
+        const all = [...(json.free ?? FREE_SYMBOLS), ...(json.paid ?? [])];
+        setSymbols(Array.from(new Set(all)));
+      })
+      .catch(() => {
+        // Se queda con el universo gratuito si falla la petición.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Reloj de un segundo para el contador de "próxima vela en...". Arranca
@@ -774,9 +840,10 @@ export function CandleChart() {
       const diaActual = Math.floor(ultima.time / 86400);
 
       // Primera vela de ese día: la apertura.
-      const apertura =
-        data.candles.find((c) => Math.floor(c.time / 86400) === diaActual) ??
-        ultima;
+      const candlesDelDia = data.candles.filter(
+        (c) => Math.floor(c.time / 86400) === diaActual
+      );
+      const apertura = candlesDelDia[0] ?? ultima;
 
       candleSeriesRef.current.setMarkers([
         {
@@ -792,11 +859,20 @@ export function CandleChart() {
           text: invertScale ? undefined : "apertura",
         },
       ]);
+
+      // El marco "Hora" siempre arranca centrado en la sesión más reciente
+      // (el día en curso, o el último día hábil si el mercado está cerrado)
+      // en vez de mostrar los 180 días de historia que se piden de fondo
+      // para las medias móviles — a nadie le sirve ver seis meses de velas
+      // horarias amontonadas.
+      chartRef.current?.timeScale().setVisibleRange({
+        from: apertura.time as unknown as UTCTimestamp,
+        to: (ultima.time + 3600) as unknown as UTCTimestamp,
+      });
     } else {
       candleSeriesRef.current.setMarkers([]);
+      chartRef.current?.timeScale().fitContent();
     }
-
-    chartRef.current?.timeScale().fitContent();
 
     // Un frame después, para que el autoscale del precio ya haya aplicado
     // antes de calcular dónde cae el último precio en el panel.
@@ -818,7 +894,7 @@ export function CandleChart() {
         <div className="flex items-center gap-2">
           <SelectDropdown
             value={symbol}
-            options={SYMBOLS.map((s) => ({ key: s, label: s }))}
+            options={symbols.map((s) => ({ key: s, label: s }))}
             onChange={setSymbol}
             palette={palette}
           />

@@ -16,6 +16,9 @@ const PLACEHOLDER: Quote[] = FREE_SYMBOLS.map((symbol) => ({
 
 export function TickerStrip() {
   const [quotes, setQuotes] = useState<Quote[]>(PLACEHOLDER);
+  // Si ya hay suscripción activa, el servidor lo dice aquí — nunca se decide
+  // en el navegador. Empieza en `false` (lado seguro) hasta que responda.
+  const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,8 +27,9 @@ export function TickerStrip() {
       try {
         const res = await fetch("/api/quotes");
         const data = await res.json();
-        if (!cancelled && Array.isArray(data.quotes)) {
-          setQuotes(data.quotes);
+        if (!cancelled) {
+          if (Array.isArray(data.quotes)) setQuotes(data.quotes);
+          setAllowed(Boolean(data.allowed));
         }
       } catch {
         // Se queda con el último valor conocido (o el placeholder) si falla la red.
@@ -69,14 +73,20 @@ export function TickerStrip() {
       {LOCKED_GROUPS.map((sym) => (
         <div
           key={sym}
-          className="flex flex-col gap-1 bg-panel px-4 py-3 opacity-70"
+          className={`flex flex-col gap-1 bg-panel px-4 py-3 ${allowed ? "" : "opacity-70"}`}
         >
           <span className="font-mono text-sm font-medium text-text">
             {sym}
           </span>
-          <span className="text-[11px] uppercase tracking-wide text-gold">
-            Con suscripción
-          </span>
+          {allowed ? (
+            <span className="text-[11px] uppercase tracking-wide text-green">
+              Desbloqueado
+            </span>
+          ) : (
+            <span className="text-[11px] uppercase tracking-wide text-gold">
+              Con suscripción
+            </span>
+          )}
         </div>
       ))}
     </div>

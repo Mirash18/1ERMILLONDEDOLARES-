@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getQuotes } from "@/lib/marketData";
-
-// Universo gratuito (Fase 1/2). El universo pagado (S&P 500 / Nasdaq) se
-// suma en la Fase 3, detrás de la verificación de suscripción — nunca
-// expuesto aquí sin antes revisar el estado de pago en el servidor.
-const FREE_SYMBOLS = ["SPY", "META", "GLD"];
+import { getAccess } from "@/lib/subscription";
+import { FREE_SYMBOLS } from "@/lib/universe";
 
 export async function GET() {
-  const quotes = await getQuotes(FREE_SYMBOLS);
-  return NextResponse.json({ quotes });
+  const [quotes, access] = await Promise.all([
+    getQuotes([...FREE_SYMBOLS]),
+    getAccess(),
+  ]);
+  return NextResponse.json({ quotes, allowed: access.allowed });
 }
