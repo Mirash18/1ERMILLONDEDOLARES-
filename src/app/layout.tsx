@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
+import { accountsConfigured } from "@/lib/subscription";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,8 +10,22 @@ export const metadata: Metadata = {
     "Plataforma de análisis, señales y educación en trading — gráficos en vivo, herramientas de estudio y clases con el profesor Miguel Cortés.",
 };
 
+// Tokens de marca (ver docs/ARQUITECTURA.md) para que los componentes de
+// Clerk (modal de login, /sign-in, /sign-up) no se vean fuera de lugar.
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "#D4AF37",
+    colorBackground: "#131722",
+    colorInputBackground: "#0B0E14",
+    colorText: "#E0E0E0",
+    colorTextSecondary: "#9AA1AE",
+    colorInputText: "#E0E0E0",
+    borderRadius: "0.5rem",
+  },
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
-  return (
+  const body = (
     <html lang="es" className="h-full antialiased">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -25,5 +41,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>
+  );
+
+  // Mismo criterio que en todo el proyecto: sin llaves, no se envuelve con
+  // Clerk — el sitio sigue sirviendo la parte gratuita sin caerse.
+  return accountsConfigured() ? (
+    <ClerkProvider appearance={clerkAppearance} afterSignOutUrl="/">
+      {body}
+    </ClerkProvider>
+  ) : (
+    body
   );
 }

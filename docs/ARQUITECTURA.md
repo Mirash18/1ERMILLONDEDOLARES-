@@ -15,7 +15,7 @@ olvida.
 |---|---|---|
 | 1 | Estructura base, marca, documentación | Completa |
 | 2 | Motor de gráficos en tiempo real (SPY/META/GLD) | Completa |
-| 3 | Pagos (Stripe) + nivel $25/mes | Pendiente |
+| 3 | Pagos (Stripe) + nivel $25/mes | En construcción — login con Clerk listo, falta Stripe |
 | 4 | Clases en vivo vía Vimeo | Pendiente |
 | 5 | Herramientas de estudio (calculadora + indicadores) | Pendiente |
 | 6 | Biblioteca de clases grabadas | Pendiente |
@@ -262,6 +262,41 @@ aprobación.
 - La plataforma es de **análisis y señales**. La ejecución de la orden
   ocurre en el bróker del propio usuario — la web no ejecuta operaciones
   ni custodia fondos.
+
+## Login con Clerk (sept. 2026 — primera mitad de Fase 3)
+
+Se integró Clerk de verdad: hasta ahora `getAccess()` en `src/lib/subscription.ts`
+tenía el plan escrito en un comentario pero devolvía siempre `"sin-cuenta"`.
+Ya llama a `auth()` y `currentUser()` (`@clerk/nextjs/server`) y revisa
+`publicMetadata.suscripcion === "activa"` — eso lo escribirá el webhook de
+Stripe cuando exista, todavía pendiente.
+
+- `src/proxy.ts` (antes `middleware.ts`, renombrado por el cambio de
+  convención de Next.js 16) monta `clerkMiddleware()` — pero solo si
+  `CLERK_SECRET_KEY` y la llave pública están puestas; si no, deja pasar la
+  petición sin más, mismo criterio de "fallar en silencio" que el resto del
+  proyecto.
+- `src/app/layout.tsx` envuelve el sitio en `<ClerkProvider>` (con los
+  colores de marca en `appearance`), y también condicionado a
+  `accountsConfigured()`.
+- `src/components/AuthStatus.tsx` son los botones de "Iniciar sesión" /
+  "Crear cuenta" (modal) o el avatar (`<UserButton>`) si ya hay sesión. Usa
+  `<Show when="signed-in|signed-out">` — en Clerk Core 3 (la versión
+  instalada, `@clerk/nextjs@7`) reemplazó a `<SignedIn>`/`<SignedOut>`.
+  Aparece en el header de `/` y de `/suscripcion`.
+- `/sign-in` y `/sign-up` (rutas con catch-all `[[...sign-in]]` /
+  `[[...sign-up]]`, como pide Clerk) por si alguien llega directo a esas
+  URLs en vez de abrir el modal.
+- **Separación entre login y cobro:** se agregó `paymentsConfigured()` junto
+  a `accountsConfigured()`. Son interruptores independientes a propósito —
+  Clerk ya puede estar listo (la gente crea cuenta e inicia sesión) mientras
+  Stripe sigue pendiente. `/suscripcion` ahora refleja el estado real: sin
+  cuenta muestra "Crear cuenta" / "Ya tengo cuenta"; con cuenta pero sin
+  Stripe muestra el botón desactivado con "Estamos terminando de conectar el
+  sistema de pagos" en vez de fingir que ya se puede pagar.
+
+Pendiente de Fase 3: el webhook `/api/webhooks/stripe` y las llaves de
+Stripe — cuando estén, `paymentsConfigured()` se enciende solo.
 
 ## Decisiones pendientes
 

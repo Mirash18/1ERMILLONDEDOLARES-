@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { accountsConfigured } from "@/lib/subscription";
+import { SignInButton, SignUpButton } from "@clerk/nextjs";
+import { AuthStatus } from "@/components/AuthStatus";
+import {
+  ACCESS_MESSAGE,
+  getAccess,
+  paymentsConfigured,
+} from "@/lib/subscription";
 
 // Lo que YA funciona hoy y entra con la suscripción.
 const incluidoAhora = [
@@ -30,8 +36,9 @@ const enCamino = [
   },
 ];
 
-export default function Suscripcion() {
-  const listo = accountsConfigured();
+export default async function Suscripcion() {
+  const access = await getAccess();
+  const pagosListos = paymentsConfigured();
 
   return (
     <div className="flex flex-1 flex-col bg-bg">
@@ -43,12 +50,15 @@ export default function Suscripcion() {
           >
             1er <span className="text-gold">Millón</span> de Dólares
           </Link>
-          <Link
-            href="/"
-            className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
-          >
-            ← volver
-          </Link>
+          <div className="flex items-center gap-5">
+            <Link
+              href="/"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              ← volver
+            </Link>
+            <AuthStatus />
+          </div>
         </div>
       </header>
 
@@ -108,19 +118,46 @@ export default function Suscripcion() {
             ))}
           </ul>
 
-          <button
-            type="button"
-            disabled={!listo}
-            className="w-full rounded bg-gold px-6 py-3 font-mono text-sm font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {listo ? "Suscribirme" : "Disponible muy pronto"}
-          </button>
-
-          {!listo && (
-            <p className="mt-3 text-center font-mono text-[11px] text-text-soft">
-              Estamos terminando de conectar el sistema de pagos.
-            </p>
+          {access.status === "sin-cuenta" ? (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <SignUpButton mode="modal">
+                <button
+                  type="button"
+                  className="w-full rounded bg-gold px-6 py-3 font-mono text-sm font-medium text-bg transition-opacity hover:opacity-90"
+                >
+                  Crear cuenta
+                </button>
+              </SignUpButton>
+              <SignInButton mode="modal">
+                <button
+                  type="button"
+                  className="w-full rounded border border-border px-6 py-3 font-mono text-sm font-medium text-text transition-colors hover:border-gold/40"
+                >
+                  Ya tengo cuenta
+                </button>
+              </SignInButton>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!pagosListos || access.status === "activa"}
+              className="w-full rounded bg-gold px-6 py-3 font-mono text-sm font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {access.status === "activa"
+                ? "Suscripción activa"
+                : pagosListos
+                  ? "Suscribirme"
+                  : "Disponible muy pronto"}
+            </button>
           )}
+
+          <p className="mt-3 text-center font-mono text-[11px] text-text-soft">
+            {access.status === "sin-cuenta"
+              ? "Crea tu cuenta ahora — cuando se active el cobro, ya vas a estar listo."
+              : access.status === "sin-suscripcion" && !pagosListos
+                ? "Tu cuenta ya está lista. Estamos terminando de conectar el sistema de pagos."
+                : ACCESS_MESSAGE[access.status]}
+          </p>
         </section>
 
         <p className="mt-8 text-center text-sm text-text-soft">

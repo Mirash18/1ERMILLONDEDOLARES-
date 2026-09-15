@@ -13,7 +13,9 @@ documentación de **cómo funciona por dentro y por qué** vive en
 
 ## Estado
 
-Fase 2 de 6 completa (gráficos en tiempo real con SPY/META/GLD). Ver `/docs/ARQUITECTURA.md` para la tabla completa de fases.
+Fase 2 de 6 completa (gráficos en tiempo real con SPY/META/GLD). Fase 3
+(pagos) en construcción: login con Clerk ya funciona, falta Stripe. Ver
+`/docs/ARQUITECTURA.md` para la tabla completa de fases.
 
 ## Correr el proyecto localmente
 

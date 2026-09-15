@@ -22,6 +22,8 @@
  * Fallar hacia el lado seguro.
  */
 
+import { auth, currentUser } from "@clerk/nextjs/server";
+
 export type SubscriptionStatus =
   | "activa" // tiene cuenta y la suscripción está al día
   | "sin-suscripcion" // tiene cuenta pero no ha pagado, o se le venció
@@ -52,6 +54,18 @@ export function accountsConfigured(): boolean {
 }
 
 /**
+ * `true` cuando además del login (Clerk) también está listo el cobro
+ * (Stripe). Son dos interruptores separados a propósito: Clerk puede estar
+ * configurado y funcionando (la gente ya puede crear cuenta e iniciar
+ * sesión) mientras Stripe sigue pendiente — en ese caso se deja entrar, pero
+ * el botón de suscripción se mantiene desactivado porque cobrar todavía no
+ * funciona.
+ */
+export function paymentsConfigured(): boolean {
+  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+}
+
+/**
  * Estado de acceso de quien está haciendo la petición.
  *
  * Es `async` a propósito aunque hoy no espere nada: cuando entre Clerk sí va
@@ -62,15 +76,21 @@ export async function getAccess(): Promise<Access> {
     return { status: "sin-configurar", allowed: false };
   }
 
-  // A partir de aquí entra Clerk, en cuanto estén las llaves en Vercel:
-  //
-  //   const { userId, sessionClaims } = await auth();
-  //   if (!userId) return { status: "sin-cuenta", allowed: false };
-  //   const activa = sessionClaims?.metadata?.suscripcion === "activa";
-  //   return activa
-  //     ? { status: "activa", allowed: true }
-  //     : { status: "sin-suscripcion", allowed: false };
-  //
-  // Hasta entonces no se deja pasar a nadie.
-  return { status: "sin-cuenta", allowed: false };
+  const { userId } = await auth();
+  if (!userId) {
+    return { status: "sin-cuenta", allowed: false };
+  }
+
+  // Se consulta el usuario completo (en vez de leer `sessionClaims`) porque
+  // eso funciona con la configuración por defecto de Clerk, sin tener que ir
+  // al dashboard a personalizar el token de sesión para que incluya
+  // `publicMetadata`. Cuando Stripe confirme un pago (Fase 3, pendiente), su
+  // webhook escribe `suscripcion: "activa"` en los metadatos públicos de
+  // este mismo usuario — hasta entonces nadie tiene suscripción activa.
+  const user = await currentUser();
+  const activa = user?.publicMetadata?.suscripcion === "activa";
+
+  return activa
+    ? { status: "activa", allowed: true }
+    : { status: "sin-suscripcion", allowed: false };
 }

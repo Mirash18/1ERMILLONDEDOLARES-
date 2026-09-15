@@ -1,5 +1,6 @@
 import { TickerStrip } from "@/components/TickerStrip";
 import { CandleChart } from "@/components/CandleChart";
+import { AuthStatus } from "@/components/AuthStatus";
 
 const modules = [
   {
@@ -24,9 +25,12 @@ export default function Home() {
           <span className="font-display text-lg tracking-tight text-text">
             1er <span className="text-gold">Millón</span> de Dólares
           </span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft">
-            en construcción · fase 1
-          </span>
+          <div className="flex items-center gap-5">
+            <span className="hidden font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft sm:inline">
+              en construcción · fase 1
+            </span>
+            <AuthStatus />
+          </div>
         </div>
       </header>
 
