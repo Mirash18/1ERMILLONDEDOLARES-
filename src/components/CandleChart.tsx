@@ -961,7 +961,15 @@ export function CandleChart() {
 
         {/* Hacia dónde viene abriendo el mercado. Solo aparece fuera de la
             sesión regular y cuando el plan de datos entrega precio extendido. */}
-        {extended && extended.price !== null && extended.session !== "regular" && (
+        {/* `typeof === "number"` a propósito, no `!== null`: si la petición
+            falló (símbolo no disponible, error de red, etc.) `extended`
+            trae un `price` en `undefined`, no `null` — con `!== null` esa
+            comparación pasaba igual y `undefined.toFixed()` tumbaba toda la
+            página. Pasó de verdad con símbolos del universo pagado antes de
+            que /api/premarket los reconociera (ver ARQUITECTURA.md). */}
+        {extended &&
+          typeof extended.price === "number" &&
+          extended.session !== "regular" && (
           <span
             className="ml-auto flex items-center gap-2 rounded px-2 py-0.5"
             style={{ backgroundColor: palette.badgeBg }}
@@ -975,7 +983,7 @@ export function CandleChart() {
               {SESSION_LABEL[extended.session] ?? "FUERA DE SESIÓN"}
             </span>
             <span>{extended.price.toFixed(2)}</span>
-            {extended.percentChange !== null && (
+            {typeof extended.percentChange === "number" && (
               <span
                 style={{
                   color: extended.percentChange >= 0 ? "#089981" : "#F23645",

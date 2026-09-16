@@ -481,6 +481,31 @@ caen al último valor guardado (aunque ya esté vencido) antes de rendirse —
 un precio de hace 20 minutos sirve mucho más que una pantalla vacía. Solo
 si nunca hubo nada guardado se muestra el error tal cual.
 
+## Bug real: buscar una acción del universo pagado tumbaba la página (15 sept. 2026)
+
+Alejo reportó que al buscar otra acción (probó con Apple/Netflix) en el
+gráfico, la página se rompía con un mensaje de "no se pudo cargar". Se
+reprodujo y encontró la causa real:
+
+- `/api/premarket` se quedó con la lista vieja de solo 3 símbolos
+  (`FREE_SYMBOLS`) de cuando no existía el universo pagado — nunca se
+  actualizó cuando se agregó S&P 500/Nasdaq-100 (`/api/candles` sí se
+  actualizó, este endpoint se quedó atrás). Al elegir AAPL o NFLX,
+  devolvía 403 en vez de la cotización extendida.
+- `CandleChart.tsx` recibía ese error y hacía
+  `extended.price.toFixed(2)` protegido solo por
+  `extended.price !== null` — pero un error trae `price` en `undefined`,
+  no en `null`, y `undefined !== null` dio `true`. `undefined.toFixed()`
+  tira una excepción sin capturar que tumba TODO el árbol de React (no
+  solo el gráfico) — de ahí el "esta página no se pudo cargar".
+
+**Corregido:** `/api/premarket` ahora usa el mismo criterio de acceso que
+`/api/candles` (`isFreeSymbol`/`isPaidSymbol` + `getAccess()`, ver
+`src/lib/universe.ts`). Y la comparación en `CandleChart.tsx` pasó a
+`typeof extended.price === "number"` — así, si algún día otro endpoint
+vuelve a fallar de forma parecida, se deja de mostrar la insignia de
+pre-mercado en silencio en vez de tumbar la página entera.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
