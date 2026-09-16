@@ -62,7 +62,11 @@ export function accountsConfigured(): boolean {
  * funciona.
  */
 export function paymentsConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+  return Boolean(
+    process.env.STRIPE_SECRET_KEY &&
+      process.env.STRIPE_WEBHOOK_SECRET &&
+      process.env.STRIPE_PRICE_ID
+  );
 }
 
 /**

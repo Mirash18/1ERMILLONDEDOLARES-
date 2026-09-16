@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 
 /**
@@ -34,6 +35,12 @@ export function AuthStatus() {
         </SignUpButton>
       </Show>
       <Show when="signed-in">
+        <Link
+          href="/introduccion"
+          className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+        >
+          Introducción
+        </Link>
         <UserButton />
       </Show>
     </div>

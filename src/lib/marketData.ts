@@ -47,6 +47,25 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
     return cached.value;
   }
 
+  // Si Twelve Data falla más adelante (429, caído, lo que sea) y hay un
+  // dato guardado aunque ya esté viejo, se prefiere mostrar ESE antes que
+  // "sin datos" — un precio de hace un rato sirve más que una pantalla en
+  // blanco. `staleOrError` es el resultado a devolver en cualquier punto de
+  // fallo de aquí en adelante.
+  function staleOrError(error: string): Quote[] {
+    return (
+      cached?.value ??
+      symbols.map((symbol) => ({
+        symbol,
+        price: null,
+        change: null,
+        percentChange: null,
+        isMarketOpen: null,
+        error,
+      }))
+    );
+  }
+
   const url = `${TWELVE_DATA_QUOTE_URL}?symbol=${encodeURIComponent(
     symbols.join(",")
   )}&apikey=${apiKey}`;
@@ -60,25 +79,11 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "error de red";
-    return symbols.map((symbol) => ({
-      symbol,
-      price: null,
-      change: null,
-      percentChange: null,
-      isMarketOpen: null,
-      error: message,
-    }));
+    return staleOrError(message);
   }
 
   if (!res.ok) {
-    return symbols.map((symbol) => ({
-      symbol,
-      price: null,
-      change: null,
-      percentChange: null,
-      isMarketOpen: null,
-      error: `Twelve Data respondió ${res.status}`,
-    }));
+    return staleOrError(`Twelve Data respondió ${res.status}`);
   }
 
   const data = await res.json();
@@ -303,11 +308,19 @@ export async function getCandles(
   // proyecto hoy) — si algún día varía, hay que meterlo en la llave.
   const cacheKey = `candles:${symbol}:${interval}`;
   const session = nyMarketSession();
-  if (!fresh) {
-    const cached = await getCached<CandleSeries>(cacheKey);
-    if (cached && Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000) {
-      return cached.value;
-    }
+  // Se trae aunque sea `fresh` — no para servirla de una (eso lo salta
+  // `fresh` a propósito), sino para tener algo a lo que caer si el pedido
+  // forzado de todos modos falla.
+  const cached = await getCached<CandleSeries>(cacheKey);
+  if (!fresh && cached && Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000) {
+    return cached.value;
+  }
+
+  // Si Twelve Data falla más adelante (429, caído, lo que sea) y hay
+  // velas guardadas aunque ya estén viejas, se prefiere mostrar ESAS antes
+  // que un gráfico vacío — unas velas de hace un rato sirven más que nada.
+  function staleOrError(error: string): CandleSeries {
+    return cached?.value ?? { ...empty, error };
   }
 
   // El marco "Hora" se arma agrupando velas de 30 minutos (ver
@@ -337,17 +350,17 @@ export async function getCandles(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "error de red";
-    return { ...empty, error: message };
+    return staleOrError(message);
   }
 
   if (!res.ok) {
-    return { ...empty, error: `Twelve Data respondió ${res.status}` };
+    return staleOrError(`Twelve Data respondió ${res.status}`);
   }
 
   const data = await res.json();
 
   if (data.status === "error" || !Array.isArray(data.values)) {
-    return { ...empty, error: data.message ?? "sin datos" };
+    return staleOrError(data.message ?? "sin datos");
   }
 
   type RawValue = {

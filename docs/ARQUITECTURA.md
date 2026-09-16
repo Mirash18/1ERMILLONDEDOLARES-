@@ -419,6 +419,68 @@ caché de `fetch` de Next.js, que no estaba evitando los pedidos repetidos.
 - Plan gratuito de Upstash: 500.000 comandos/mes, más que suficiente para
   esta escala.
 
+## Pasarela de pago: Stripe descartado, se elige MercadoPago (15 sept. 2026)
+
+Se intentó arrancar con Stripe (ya estaba en el plan original) y se
+construyó el flujo completo (`src/lib/stripe.ts`, `/api/checkout`,
+`/api/webhooks/stripe`) — pero **Stripe no opera con vendedores en
+Colombia**. Se investigaron las alternativas:
+
+- **PayU**: su API de suscripciones/cobro recurrente está **descontinuada**
+  — ya no se ofrece a comercios nuevos. Solo queda su API de tokenización,
+  que obligaría a construir el cobro mensual a mano (cron propio,
+  reintentos, manejo de pagos fallidos).
+- **Wompi** (Bancolombia) y **Bold** (la plataforma que ya usa Alejo para
+  cobrar manualmente a la comunidad): mismo problema — tokenización sí,
+  pero el débito automático mensual necesita convenios aparte o
+  construirse a mano.
+- **MercadoPago**: tiene una API de suscripciones vigente y activa
+  ("Preapproval"), con documentación específica para Colombia
+  (mercadopago.com.co/developers). Maneja el ciclo completo: cobra el
+  primer pago, y de ahí en adelante cobra solo cada mes sin que el
+  proyecto tenga que hacer nada — mismo nivel de automatización que se
+  buscaba con Stripe.
+
+**Se elige MercadoPago.** El código de Stripe se queda en el repo tal cual
+— sin las llaves puestas, simplemente no hace nada (falla en silencio,
+mismo criterio de siempre) — por si algún día se constituye una empresa en
+un país donde Stripe sí opere. La integración de MercadoPago está
+pendiente de que Alejo cree la cuenta de developer y comparta las
+credenciales de prueba.
+
+PayU sí acepta personas naturales sin NIT (cédula + comprobante de
+domicilio + extractos bancarios, 2-5 días hábiles) — el problema no fue el
+registro, fue que el producto de suscripciones ya no existe. Falta
+confirmar si MercadoPago pide NIT para pasar de credenciales de prueba a
+producción real; se sabrá cuando Alejo intente ese paso.
+
+## Página "Introducción al trading" (15 sept. 2026)
+
+Nueva ruta `/introduccion`, protegida solo por tener cuenta (no por
+suscripción activa — es de bienvenida para cualquiera que se registre, no
+solo para quien paga). Redirige a `/sign-in` si no hay sesión.
+
+- Después de crear una cuenta, Clerk manda directo aquí
+  (`NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/introduccion`, en vez
+  de la portada).
+- Muestra 5 módulos de un programa de estudio (qué es el trading, leer
+  velas, medias móviles, Bollinger/volumen, gestión de riesgo) — son solo
+  los **títulos**, marcados "Próximamente": el contenido real (video,
+  texto) lo tiene que traer Miguel Cortés, no se inventó aquí.
+- Debajo, el mismo `CandleChart` de la portada, para practicar de una vez.
+- Desde el header (`AuthStatus`), cualquiera con sesión puede volver a
+  entrar por el link "Introducción".
+
+## Datos de mercado: servir el último precio conocido si Twelve Data falla
+(15 sept. 2026)
+
+Antes, si Twelve Data fallaba (429, caído, lo que sea) el sitio mostraba
+"sin datos" así hubiera un precio guardado en la caché de Redis de hace
+apenas un rato. Ahora `getCandles()` y `getQuotes()` (`marketData.ts`)
+caen al último valor guardado (aunque ya esté vencido) antes de rendirse —
+un precio de hace 20 minutos sirve mucho más que una pantalla vacía. Solo
+si nunca hubo nada guardado se muestra el error tal cual.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
