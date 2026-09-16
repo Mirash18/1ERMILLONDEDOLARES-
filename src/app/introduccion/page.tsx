@@ -65,6 +65,12 @@ export default async function Introduccion() {
             >
               ← volver
             </Link>
+            <Link
+              href="/sala-de-trading"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              Sala de Trading
+            </Link>
             <AuthStatus />
           </div>
         </div>

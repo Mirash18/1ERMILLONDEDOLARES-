@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { TickerStrip } from "@/components/TickerStrip";
 import { CandleChart } from "@/components/CandleChart";
 import { AuthStatus } from "@/components/AuthStatus";
@@ -29,6 +30,12 @@ export default function Home() {
             <span className="hidden font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft sm:inline">
               en construcción · fase 1
             </span>
+            <Link
+              href="/sala-de-trading"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              Sala de Trading
+            </Link>
             <AuthStatus />
           </div>
         </div>

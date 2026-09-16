@@ -206,10 +206,10 @@ const SESSION_LABEL: Record<string, string> = {
 // Convierte la posición en píxeles del último precio (o null si aún no se
 // puede calcular) en el "top" que le corresponde a la insignia, pegada justo
 // debajo de esa altura y sin salirse del panel del gráfico.
-function clampBadgeTop(priceY: number | null): number {
+function clampBadgeTop(priceY: number | null, chartHeight: number): number {
   if (priceY === null) return 8;
   const min = 8;
-  const max = CHART_HEIGHT - BADGE_HEIGHT_ESTIMATE - 8;
+  const max = chartHeight - BADGE_HEIGHT_ESTIMATE - 8;
   return Math.min(Math.max(priceY + BADGE_GAP_BELOW_PRICE, min), max);
 }
 
@@ -419,7 +419,11 @@ function IndicatorsDropdown({
   );
 }
 
-export function CandleChart() {
+export function CandleChart({
+  // Para la Sala de Trading (gráfico a pantalla completa): en vez del alto
+  // fijo de 420px, el panel ocupa toda la altura que le dé su contenedor.
+  fillHeight = false,
+}: { fillHeight?: boolean } = {}) {
   const [symbol, setSymbol] = useState<string>("SPY");
   // "Hora" por defecto: es el marco que la comunidad mira día a día — que
   // cada quien tenga que cambiarlo manualmente cada vez no tenía sentido.
@@ -461,6 +465,10 @@ export function CandleChart() {
   // Copia siempre actualizada de `data`, para leerla desde callbacks creados
   // una sola vez (como el de resize) sin quedarse con datos viejos.
   const dataRef = useRef<CandleSeries | null>(null);
+  // Alto real del panel ahora mismo — fijo (CHART_HEIGHT) normalmente, pero
+  // dinámico en la Sala de Trading (`fillHeight`). `clampBadgeTop` lo usa
+  // para no dejar salir la insignia del panel real, sea cual sea su alto.
+  const chartHeightRef = useRef(CHART_HEIGHT);
 
   // Recalcula en qué altura cae el último precio en el panel — se llama
   // cuando llegan datos nuevos, al cambiar el tamaño del gráfico y al hacer
@@ -540,7 +548,9 @@ export function CandleChart() {
         horzAlign: "center",
         vertAlign: "center",
       },
-      height: CHART_HEIGHT,
+      height: fillHeight
+        ? containerRef.current.clientHeight || CHART_HEIGHT
+        : CHART_HEIGHT,
     });
 
     const candleSeries = chart.addCandlestickSeries({
@@ -591,7 +601,16 @@ export function CandleChart() {
 
     const resize = () => {
       if (containerRef.current) {
-        chart.applyOptions({ width: containerRef.current.clientWidth });
+        const width = containerRef.current.clientWidth;
+        if (fillHeight) {
+          // El contenedor (flex-1 en la Sala de Trading) es quien decide el
+          // alto real — el gráfico solo lo sigue.
+          const height = containerRef.current.clientHeight || CHART_HEIGHT;
+          chart.applyOptions({ width, height });
+          chartHeightRef.current = height;
+        } else {
+          chart.applyOptions({ width });
+        }
       }
       updatePriceY();
     };
@@ -932,7 +951,11 @@ export function CandleChart() {
 
   return (
     <div
-      className="rounded-lg border p-4 transition-colors"
+      className={
+        fillHeight
+          ? "flex h-full flex-col rounded-lg border p-4 transition-colors"
+          : "rounded-lg border p-4 transition-colors"
+      }
       style={{
         backgroundColor: palette.wrapperBg,
         borderColor: palette.wrapperBorder,
@@ -1066,8 +1089,8 @@ export function CandleChart() {
         </div>
       </div>
 
-      <div className="relative">
-        <div ref={containerRef} className="w-full" />
+      <div className={fillHeight ? "relative min-h-0 flex-1" : "relative"}>
+        <div ref={containerRef} className={fillHeight ? "h-full w-full" : "w-full"} />
         {/* Cuenta regresiva hasta que cierre la vela actual y abra la
             siguiente — pegada justo debajo de la etiqueta de precio actual,
             así que sube y baja con el precio en vez de quedar fija en una
@@ -1077,7 +1100,7 @@ export function CandleChart() {
           style={{
             backgroundColor: palette.badgeBg,
             color: palette.textSoft,
-            top: `${clampBadgeTop(priceY)}px`,
+            top: `${clampBadgeTop(priceY, chartHeightRef.current)}px`,
           }}
         >
           Próxima vela en{" "}

@@ -543,6 +543,24 @@ una estimación.
 - No aplica a ETFs (SPY, GLD): no reportan earnings, así que ahí
   simplemente no aparece nada — no es un error.
 
+## Sala de Trading — gráfico a pantalla completa (15 sept. 2026)
+
+Como en TradingView, ThinkOrSwim o TC2000: una vista sin nada alrededor,
+solo el gráfico ocupando toda la pantalla. Nueva ruta `/sala-de-trading`,
+pública (mismo criterio que el gráfico de la portada — no pide cuenta ni
+suscripción, mismo universo de símbolos según quien esté mirando).
+
+- `CandleChart` aprendió un modo `fillHeight`: en vez del alto fijo de
+  420px, el panel ocupa el alto real de su contenedor (el `ResizeObserver`
+  que ya existía para el ancho ahora también mide el alto cuando
+  `fillHeight` está activo). `clampBadgeTop()` recibe ese alto como
+  parámetro en vez de asumir el fijo de siempre — si no, la insignia de
+  "próxima vela" se hubiera podido salir del panel en pantallas grandes.
+- El uso normal (portada, `/introduccion`) sigue igual, con el alto fijo de
+  antes — `fillHeight` es opcional y por defecto `false`.
+- Enlace "Sala de Trading" en el header de la portada y de
+  `/introduccion`, al lado de los demás links.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
