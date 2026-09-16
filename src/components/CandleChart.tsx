@@ -14,6 +14,7 @@ import {
 import type { CandleSeries, ExtendedQuote } from "@/lib/marketData";
 import type { EarningsInfo } from "@/lib/earnings";
 import { FREE_SYMBOLS } from "@/lib/universe";
+import { Watchlist } from "./Watchlist";
 
 // A cuántos días o menos de un earning estimado aparece el aviso — no tiene
 // caso mostrarlo con meses de anticipación, ver docs/ARQUITECTURA.md.
@@ -49,7 +50,7 @@ const BADGE_HEIGHT_ESTIMATE = 22;
 
 type Theme = "dark" | "light";
 
-type Palette = {
+export type Palette = {
   wrapperBg: string;
   wrapperBorder: string;
   chartBg: string;
@@ -488,7 +489,7 @@ export function CandleChart({
   // navegador solo pinta lo que le llega, nunca decide acceso por su cuenta.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/universe")
+    fetch(fillHeight ? "/api/universe?scope=sala" : "/api/universe")
       .then((res) => res.json())
       .then((json: { free?: string[]; paid?: string[] }) => {
         if (cancelled) return;
@@ -689,7 +690,7 @@ export function CandleChart({
       const id = ++requestIdRef.current;
       const res = await fetch(
         `/api/candles?symbol=${symbol}&interval=${timeframe}` +
-          `${fresh ? "&fresh=1" : ""}&t=${Date.now()}`
+          `${fresh ? "&fresh=1" : ""}${fillHeight ? "&scope=sala" : ""}&t=${Date.now()}`
       );
       const json: CandleSeries = await res.json();
       if (id === requestIdRef.current) setData(json);
@@ -792,7 +793,9 @@ export function CandleChart({
 
     async function load() {
       try {
-        const res = await fetch(`/api/premarket?symbol=${symbol}`);
+        const res = await fetch(
+          `/api/premarket?symbol=${symbol}${fillHeight ? "&scope=sala" : ""}`
+        );
         const json: ExtendedQuote = await res.json();
         if (!cancelled) setExtended(json);
       } catch {
@@ -816,7 +819,9 @@ export function CandleChart({
 
     async function load() {
       try {
-        const res = await fetch(`/api/earnings?symbol=${symbol}`);
+        const res = await fetch(
+          `/api/earnings?symbol=${symbol}${fillHeight ? "&scope=sala" : ""}`
+        );
         const json: EarningsInfo = await res.json();
         if (!cancelled) setEarnings(json);
       } catch {
@@ -949,11 +954,14 @@ export function CandleChart({
             86400
         );
 
-  return (
+  // El panel del gráfico en sí — igual en ambos modos. Solo se envuelve en
+  // un contenedor aparte (con la lista de seguimiento al lado) cuando
+  // `fillHeight` está activo, ver el `return` más abajo.
+  const chartPanel = (
     <div
       className={
         fillHeight
-          ? "flex h-full flex-col rounded-lg border p-4 transition-colors"
+          ? "flex h-full min-w-0 flex-1 flex-col rounded-lg border p-4 transition-colors"
           : "rounded-lg border p-4 transition-colors"
       }
       style={{
@@ -1126,6 +1134,16 @@ export function CandleChart({
           Sin velas para mostrar todavía.
         </p>
       )}
+    </div>
+  );
+
+  if (!fillHeight) return chartPanel;
+
+  // Sala de Trading: el gráfico y la lista de seguimiento lado a lado.
+  return (
+    <div className="flex h-full gap-3">
+      {chartPanel}
+      <Watchlist symbol={symbol} onSelect={setSymbol} palette={palette} />
     </div>
   );
 }

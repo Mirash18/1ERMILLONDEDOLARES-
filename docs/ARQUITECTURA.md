@@ -561,6 +561,45 @@ suscripción, mismo universo de símbolos según quien esté mirando).
 - Enlace "Sala de Trading" en el header de la portada y de
   `/introduccion`, al lado de los demás links.
 
+## Lista de seguimiento (watchlist) en la Sala de Trading (15 sept. 2026)
+
+Como el panel "Populares" de ProRealTime, armado con un buscador por
+categorías como el "Agregar símbolo" de TradingView. Solo vive en la Sala
+de Trading — la portada y `/introduccion` quedan igual que antes.
+
+- **Decisión temporal de acceso (Alejo, 15 sept. 2026):** mientras se
+  prueba, basta con **tener cuenta** — no hace falta pagar. A futuro esto
+  se vuelve parte del plan de $25/mes, junto con las clases de Miguel
+  Cortés. Por eso se separó en dos funciones en `subscription.ts`:
+  `isRegistered()` (solo sesión) y `hasSymbolAccess(scope)`, que usa
+  `isRegistered()` cuando `scope === "sala"` y `getAccess().allowed` (la de
+  siempre) en cualquier otro caso. El día que se decida cobrarlo, es un
+  único cambio en `hasSymbolAccess()` — nada más que tocar.
+- Todas las rutas de datos (`/api/candles`, `/api/premarket`,
+  `/api/earnings`, `/api/universe`, `/api/quotes`) aceptan `scope=sala` y
+  aplican esa regla relajada — `CandleChart` lo manda solo cuando
+  `fillHeight` está activo (o sea, solo en la Sala de Trading).
+- `src/lib/universe.ts` ganó `SECTORS`: la misma lista de acciones agrupada
+  por sector (Tecnología, Financieras, Salud, etc.) para las categorías del
+  buscador. Solo acciones de EE.UU. — Forex y Cripto quedan pendientes de
+  una fuente de datos aparte.
+- **Guardado:** `src/lib/watchlist.ts`, en el mismo Redis de la caché de
+  mercado pero SIN vencimiento (`getRedisClient()`, expuesto por
+  `marketCache.ts` para esto). Máximo 30 símbolos por persona, y se filtra
+  cualquier símbolo que no exista en el proyecto antes de guardar.
+  **Ojo:** esa base tiene "eviction" activado (pensada para la caché, que sí
+  se puede volver a pedir) — con el proyecto todavía chico el riesgo de que
+  eso bote una watchlist real es bajísimo, pero si esto crece en serio hay
+  que separarla a su propio almacenamiento. Ver "Decisiones pendientes".
+- **Cotizaciones más eficientes:** de paso, `getQuotes()` (`marketData.ts`)
+  pasó de cachear por la combinación completa de símbolos pedidos a
+  cachear cada símbolo por separado — antes, dos listas de seguimiento
+  distintas que compartieran una acción no se beneficiaban la una de la
+  caché de la otra.
+- Si no hay cuenta, el panel muestra un aviso con botones de crear
+  cuenta/iniciar sesión en vez del buscador — nunca deja ver ni intentar
+  nada del universo pagado sin sesión.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

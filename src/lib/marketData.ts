@@ -24,66 +24,87 @@ export type Quote = {
 
 const TWELVE_DATA_QUOTE_URL = "https://api.twelvedata.com/quote";
 
+function errorQuote(symbol: string, error: string): Quote {
+  return {
+    symbol,
+    price: null,
+    change: null,
+    percentChange: null,
+    isMarketOpen: null,
+    error,
+  };
+}
+
+/**
+ * Cotizaciones para una lista de símbolos — cacheadas UNA POR SÍMBOLO, no
+ * por la combinación pedida. Antes se cacheaba por `symbols.join(",")`, así
+ * que dos listas de seguimiento distintas que compartieran, digamos, AAPL,
+ * no se beneficiaban la una de la caché de la otra — cada combinación
+ * nueva volvía a gastar créditos por símbolos que ya se tenían guardados.
+ * Con la lista de seguimiento de la Sala de Trading (cada usuario arma la
+ * suya) esto importa de verdad.
+ */
 export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   const apiKey = process.env.TWELVEDATA_API_KEY;
-
   if (!apiKey) {
-    return symbols.map((symbol) => ({
-      symbol,
-      price: null,
-      change: null,
-      percentChange: null,
-      isMarketOpen: null,
-      error: "TWELVEDATA_API_KEY no configurada en el servidor",
-    }));
-  }
-
-  // Caché persistente (ver marketCache.ts): con el mercado cerrado, el
-  // precio guardado no cambia — se sirve tal cual, sin gastar más créditos.
-  const cacheKey = `quotes:${symbols.join(",")}`;
-  const session = nyMarketSession();
-  const cached = await getCached<Quote[]>(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000) {
-    return cached.value;
-  }
-
-  // Si Twelve Data falla más adelante (429, caído, lo que sea) y hay un
-  // dato guardado aunque ya esté viejo, se prefiere mostrar ESE antes que
-  // "sin datos" — un precio de hace un rato sirve más que una pantalla en
-  // blanco. `staleOrError` es el resultado a devolver en cualquier punto de
-  // fallo de aquí en adelante.
-  function staleOrError(error: string): Quote[] {
-    return (
-      cached?.value ??
-      symbols.map((symbol) => ({
-        symbol,
-        price: null,
-        change: null,
-        percentChange: null,
-        isMarketOpen: null,
-        error,
-      }))
+    return symbols.map((s) =>
+      errorQuote(s, "TWELVEDATA_API_KEY no configurada en el servidor")
     );
+  }
+  if (symbols.length === 0) return [];
+
+  const session = nyMarketSession();
+  const ttlMs = cacheTtlSeconds(session) * 1000;
+
+  // Qué ya se tiene fresco en caché, y qué toca pedirle a Twelve Data.
+  const cachedEntries = await Promise.all(
+    symbols.map((s) => getCached<Quote>(`quote:${s}`))
+  );
+  const results = new Map<string, Quote>();
+  const missing: string[] = [];
+  symbols.forEach((s, i) => {
+    const entry = cachedEntries[i];
+    if (entry && Date.now() - entry.fetchedAt < ttlMs) {
+      results.set(s, entry.value);
+    } else {
+      missing.push(s);
+    }
+  });
+
+  if (missing.length === 0) {
+    return symbols.map((s) => results.get(s)!);
+  }
+
+  // Si Twelve Data falla, un símbolo con algo guardado (aunque ya esté
+  // vencido) muestra ESE precio en vez de "sin datos" — sirve más un precio
+  // de hace un rato que una pantalla en blanco.
+  function staleOrError(symbol: string, i: number, error: string): Quote {
+    return cachedEntries[i]?.value ?? errorQuote(symbol, error);
   }
 
   const url = `${TWELVE_DATA_QUOTE_URL}?symbol=${encodeURIComponent(
-    symbols.join(",")
+    missing.join(",")
   )}&apikey=${apiKey}`;
 
   let res: Response;
   try {
-    res = await fetch(url, {
-      // Se cachea 30s en el servidor para no gastar de más los créditos
-      // del plan gratuito (8 créditos/minuto, 800/día).
-      next: { revalidate: 30 },
-    });
+    res = await fetch(url, { next: { revalidate: 30 } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "error de red";
-    return staleOrError(message);
+    missing.forEach((s) => {
+      const i = symbols.indexOf(s);
+      results.set(s, staleOrError(s, i, message));
+    });
+    return symbols.map((s) => results.get(s)!);
   }
 
   if (!res.ok) {
-    return staleOrError(`Twelve Data respondió ${res.status}`);
+    const message = `Twelve Data respondió ${res.status}`;
+    missing.forEach((s) => {
+      const i = symbols.indexOf(s);
+      results.set(s, staleOrError(s, i, message));
+    });
+    return symbols.map((s) => results.get(s)!);
   }
 
   const data = await res.json();
@@ -91,46 +112,39 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   // Con un solo símbolo, Twelve Data devuelve el objeto plano de la cotización.
   // Con varios símbolos (separados por coma), devuelve { SYMBOL: {...}, ... }.
   const bySymbol: Record<string, Record<string, unknown>> =
-    symbols.length === 1 ? { [symbols[0]]: data } : data;
+    missing.length === 1 ? { [missing[0]]: data } : data;
 
-  const quotes = symbols.map((symbol) => {
+  for (const symbol of missing) {
     const entry = bySymbol?.[symbol];
     const entryError =
       typeof entry?.message === "string" ? entry.message : undefined;
 
-    if (!entry || entry.status === "error" || entryError) {
-      return {
-        symbol,
-        price: null,
-        change: null,
-        percentChange: null,
-        isMarketOpen: null,
-        error: entryError ?? "sin datos",
-      };
+    const quote: Quote =
+      !entry || entry.status === "error" || entryError
+        ? errorQuote(symbol, entryError ?? "sin datos")
+        : {
+            symbol,
+            price: entry.close !== undefined ? Number(entry.close) : null,
+            change: entry.change !== undefined ? Number(entry.change) : null,
+            percentChange:
+              entry.percent_change !== undefined
+                ? Number(entry.percent_change)
+                : null,
+            isMarketOpen:
+              typeof entry.is_market_open === "boolean"
+                ? entry.is_market_open
+                : null,
+          };
+
+    results.set(symbol, quote);
+    // Solo se guarda si de verdad trajo algo — un error puntual no debe
+    // quedar guardado como si fuera el precio real.
+    if (quote.price !== null) {
+      await setCached(`quote:${symbol}`, quote, cacheTtlSeconds(session));
     }
-
-    return {
-      symbol,
-      price: entry.close !== undefined ? Number(entry.close) : null,
-      change: entry.change !== undefined ? Number(entry.change) : null,
-      percentChange:
-        entry.percent_change !== undefined
-          ? Number(entry.percent_change)
-          : null,
-      isMarketOpen:
-        typeof entry.is_market_open === "boolean"
-          ? entry.is_market_open
-          : null,
-    };
-  });
-
-  // Solo se guarda si de verdad trajo algo — un error puntual de Twelve
-  // Data no debe quedar guardado como si fuera el precio real.
-  if (quotes.some((q) => q.price !== null)) {
-    await setCached(cacheKey, quotes, cacheTtlSeconds(session));
   }
 
-  return quotes;
+  return symbols.map((s) => results.get(s)!);
 }
 
 export type Candle = {

@@ -2,10 +2,16 @@
  * Universo de símbolos de la plataforma.
  *
  * - `FREE_SYMBOLS`: siempre visibles, sin cuenta ni suscripción (Fase 2).
- * - `PAID_SYMBOLS`: S&P 500 + Nasdaq-100, solo para quien tenga
- *   `getAccess().allowed === true` (ver `src/lib/subscription.ts`). Se valida
- *   SIEMPRE en el servidor (`/api/universe`, `/api/candles`) — el navegador
- *   nunca decide por su cuenta qué símbolos puede pedir.
+ * - `PAID_SYMBOLS`: S&P 500 + Nasdaq-100, protegido por
+ *   `hasSymbolAccess()` (ver `src/lib/subscription.ts`) — hoy exige
+ *   suscripción activa en la portada/`/introduccion`, y solo estar
+ *   registrado en la Sala de Trading (decisión temporal de prueba, sept.
+ *   2026). Se valida SIEMPRE en el servidor — el navegador nunca decide por
+ *   su cuenta qué símbolos puede pedir.
+ * - `SECTORS`: la misma lista de acciones, agrupada por sector — para el
+ *   buscador "por categorías" de la Sala de Trading (como el "Agregar
+ *   símbolo" de TradingView). Solo acciones de EE.UU. por ahora: no hay
+ *   Forex ni Cripto todavía, eso implica una fuente de datos aparte.
  *
  * OJO — esta lista es una foto aproximada, no una fuente oficial y viva de
  * los índices: los componentes de S&P 500 y Nasdaq-100 cambian con el tiempo
@@ -18,7 +24,10 @@
 
 export const FREE_SYMBOLS = ["SPY", "META", "GLD"] as const;
 
-// Nasdaq-100, componentes conocidos.
+// Nasdaq-100, componentes conocidos. No tienen sector propio aquí — varios
+// ya aparecen en los sectores de abajo (Tecnología, Consumo, etc.); el
+// resto cae en "Otras del Nasdaq" para que el buscador por categorías no
+// se los pierda.
 export const NASDAQ100_SYMBOLS = [
   "AAPL", "ABNB", "ADBE", "ADI", "ADP", "ADSK", "AEP", "AMAT", "AMD", "AMGN",
   "AMZN", "ANSS", "APP", "ARM", "ASML", "AVGO", "AXON", "AZN", "BIIB", "BKNG",
@@ -33,64 +42,128 @@ export const NASDAQ100_SYMBOLS = [
   "WDAY", "XEL", "ZS",
 ] as const;
 
-// S&P 500 — subconjunto amplio (ver nota arriba: no son las 500 exactas).
-export const SP500_SYMBOLS = [
-  // Tecnología
-  "AAPL", "MSFT", "NVDA", "AVGO", "ORCL", "CRM", "ACN", "IBM", "ADBE", "AMD",
-  "TXN", "QCOM", "INTC", "AMAT", "MU", "LRCX", "KLAC", "SNPS", "CDNS", "PANW",
-  "FTNT", "ANET", "NOW", "INTU", "ADI", "MCHP", "ON", "HPQ", "DELL", "WDC",
-  "STX", "NTAP", "JNPR", "FFIV", "GEN", "AKAM", "EPAM", "PTC", "TYL", "TDY",
-  "KEYS", "TER", "ZBRA", "GLW", "APH", "TEL", "MSI",
-  // Comunicaciones
-  "GOOGL", "GOOG", "META", "NFLX", "DIS", "CMCSA", "TMUS", "VZ", "T", "CHTR",
-  "EA", "TTWO", "WBD", "OMC", "IPG", "LYV", "MTCH", "PARA", "FOXA", "FOX",
-  "NWSA", "NWS",
-  // Consumo discrecional
-  "AMZN", "TSLA", "HD", "MCD", "NKE", "LOW", "SBUX", "BKNG", "TJX", "ORLY",
-  "MAR", "GM", "F", "CMG", "ABNB", "YUM", "ROST", "AZO", "HLT", "DHI", "LEN",
-  "NVR", "PHM", "EBAY", "ETSY", "BBY", "DG", "DLTR", "ULTA", "RL", "TPR",
-  "DECK", "GRMN", "POOL", "LVS", "WYNN", "MGM", "CCL", "RCL", "NCLH",
-  // Consumo básico
-  "PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "MDLZ", "CL", "KMB", "GIS",
-  "KHC", "HSY", "STZ", "SYY", "KR", "ADM", "TSN", "CHD", "CLX", "MKC", "TAP",
-  "HRL", "CAG", "CPB", "SJM", "EL", "TGT",
-  // Financieras
-  "JPM", "V", "MA", "BAC", "WFC", "MS", "GS", "SPGI", "BLK", "AXP", "C",
-  "SCHW", "CB", "PGR", "MMC", "ICE", "CME", "AON", "USB", "PNC", "TFC", "AIG",
-  "MET", "PRU", "TRV", "AFL", "ALL", "BK", "STT", "FITB", "HBAN", "RF", "KEY",
-  "CFG", "MTB", "NTRS", "DFS", "SYF", "COF", "PFG", "GL", "WTW", "AJG", "BRO",
-  "ACGL", "GPN", "FIS", "FI", "PYPL", "MCO",
-  // Salud
-  "UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "TMO", "ABT", "DHR", "BMY",
-  "AMGN", "MDT", "GILD", "ISRG", "VRTX", "CVS", "ELV", "CI", "HUM", "CNC",
-  "MOH", "ZTS", "SYK", "BSX", "BDX", "BAX", "EW", "IDXX", "IQV", "A", "MRNA",
-  "REGN", "BIIB", "HCA", "DXCM", "ALGN", "WAT", "MTD", "RMD", "GEHC", "COO",
-  "PODD", "VTRS", "CTLT",
-  // Industriales
-  "GE", "HON", "RTX", "CAT", "DE", "UNP", "UPS", "BA", "LMT", "GD", "NOC",
-  "MMM", "ETN", "EMR", "ITW", "PH", "CMI", "PCAR", "ROP", "CSX", "NSC", "FDX",
-  "WM", "RSG", "JCI", "CARR", "OTIS", "TT", "IR", "XYL", "DOV", "AME", "ROK",
-  "FAST", "PWR", "URI", "EFX", "CTAS", "VRSK", "EXPD", "JBHT", "CHRW", "LDOS",
-  "HWM", "TDG", "TXT", "HII", "LHX",
-  // Energía
-  "XOM", "CVX", "COP", "EOG", "SLB", "MPC", "PSX", "VLO", "OXY", "WMB", "KMI",
-  "OKE", "HES", "DVN", "FANG", "HAL", "BKR", "TRGP", "CTRA", "EQT", "APA",
-  // Utilities
-  "NEE", "DUK", "SO", "D", "AEP", "EXC", "SRE", "XEL", "ED", "PEG", "WEC",
-  "ES", "AWK", "DTE", "PPL", "FE", "AEE", "CMS", "CNP", "ATO", "NI", "LNT",
-  "EVRG", "PNW",
-  // Bienes raíces
-  "PLD", "AMT", "EQIX", "CCI", "PSA", "O", "WELL", "DLR", "SPG", "AVB", "EQR",
-  "VICI", "SBAC", "IRM", "ARE", "VTR", "MAA", "ESS", "UDR", "CPT", "KIM",
-  "REG", "HST", "EXR", "INVH",
-  // Materiales
-  "LIN", "APD", "SHW", "ECL", "FCX", "NEM", "DOW", "DD", "PPG", "NUE", "VMC",
-  "MLM", "ALB", "IFF", "CTVA", "LYB", "CE", "AVY", "PKG", "IP", "BALL",
-  "AMCR", "STLD",
-] as const;
+// S&P 500 por sector — subconjunto amplio (ver nota arriba: no son las 500
+// exactas). Esta es la fuente de verdad; `SP500_SYMBOLS` y `PAID_SYMBOLS`
+// se derivan de aquí abajo.
+export const SECTORS: { name: string; symbols: string[] }[] = [
+  {
+    name: "Tecnología",
+    symbols: [
+      "AAPL", "MSFT", "NVDA", "AVGO", "ORCL", "CRM", "ACN", "IBM", "ADBE",
+      "AMD", "TXN", "QCOM", "INTC", "AMAT", "MU", "LRCX", "KLAC", "SNPS",
+      "CDNS", "PANW", "FTNT", "ANET", "NOW", "INTU", "ADI", "MCHP", "ON",
+      "HPQ", "DELL", "WDC", "STX", "NTAP", "JNPR", "FFIV", "GEN", "AKAM",
+      "EPAM", "PTC", "TYL", "TDY", "KEYS", "TER", "ZBRA", "GLW", "APH",
+      "TEL", "MSI", "CRWD", "DDOG", "APP",
+    ],
+  },
+  {
+    name: "Comunicaciones",
+    symbols: [
+      "GOOGL", "GOOG", "META", "NFLX", "DIS", "CMCSA", "TMUS", "VZ", "T",
+      "CHTR", "EA", "TTWO", "WBD", "OMC", "IPG", "LYV", "MTCH", "PARA",
+      "FOXA", "FOX", "NWSA", "NWS",
+    ],
+  },
+  {
+    name: "Consumo discrecional",
+    symbols: [
+      "AMZN", "TSLA", "HD", "MCD", "NKE", "LOW", "SBUX", "BKNG", "TJX",
+      "ORLY", "MAR", "GM", "F", "CMG", "ABNB", "YUM", "ROST", "AZO", "HLT",
+      "DHI", "LEN", "NVR", "PHM", "EBAY", "ETSY", "BBY", "DG", "DLTR",
+      "ULTA", "RL", "TPR", "DECK", "GRMN", "POOL", "LVS", "WYNN", "MGM",
+      "CCL", "RCL", "NCLH", "DASH",
+    ],
+  },
+  {
+    name: "Consumo básico",
+    symbols: [
+      "PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "MDLZ", "CL", "KMB",
+      "GIS", "KHC", "HSY", "STZ", "SYY", "KR", "ADM", "TSN", "CHD", "CLX",
+      "MKC", "TAP", "HRL", "CAG", "CPB", "SJM", "EL", "TGT", "MNST", "KDP",
+    ],
+  },
+  {
+    name: "Financieras",
+    symbols: [
+      "JPM", "V", "MA", "BAC", "WFC", "MS", "GS", "SPGI", "BLK", "AXP", "C",
+      "SCHW", "CB", "PGR", "MMC", "ICE", "CME", "AON", "USB", "PNC", "TFC",
+      "AIG", "MET", "PRU", "TRV", "AFL", "ALL", "BK", "STT", "FITB", "HBAN",
+      "RF", "KEY", "CFG", "MTB", "NTRS", "DFS", "SYF", "COF", "PFG", "GL",
+      "WTW", "AJG", "BRO", "ACGL", "GPN", "FIS", "FI", "PYPL", "MCO",
+    ],
+  },
+  {
+    name: "Salud",
+    symbols: [
+      "UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "TMO", "ABT", "DHR", "BMY",
+      "AMGN", "MDT", "GILD", "ISRG", "VRTX", "CVS", "ELV", "CI", "HUM",
+      "CNC", "MOH", "ZTS", "SYK", "BSX", "BDX", "BAX", "EW", "IDXX", "IQV",
+      "A", "MRNA", "REGN", "BIIB", "HCA", "DXCM", "ALGN", "WAT", "MTD",
+      "RMD", "GEHC", "COO", "PODD", "VTRS", "CTLT",
+    ],
+  },
+  {
+    name: "Industriales",
+    symbols: [
+      "GE", "HON", "RTX", "CAT", "DE", "UNP", "UPS", "BA", "LMT", "GD",
+      "NOC", "MMM", "ETN", "EMR", "ITW", "PH", "CMI", "PCAR", "ROP", "CSX",
+      "NSC", "FDX", "WM", "RSG", "JCI", "CARR", "OTIS", "TT", "IR", "XYL",
+      "DOV", "AME", "ROK", "FAST", "PWR", "URI", "EFX", "CTAS", "VRSK",
+      "EXPD", "JBHT", "CHRW", "LDOS", "HWM", "TDG", "TXT", "HII", "LHX",
+      "ODFL",
+    ],
+  },
+  {
+    name: "Energía",
+    symbols: [
+      "XOM", "CVX", "COP", "EOG", "SLB", "MPC", "PSX", "VLO", "OXY", "WMB",
+      "KMI", "OKE", "HES", "DVN", "FANG", "HAL", "BKR", "TRGP", "CTRA",
+      "EQT", "APA",
+    ],
+  },
+  {
+    name: "Utilities",
+    symbols: [
+      "NEE", "DUK", "SO", "D", "AEP", "EXC", "SRE", "XEL", "ED", "PEG",
+      "WEC", "ES", "AWK", "DTE", "PPL", "FE", "AEE", "CMS", "CNP", "ATO",
+      "NI", "LNT", "EVRG", "PNW",
+    ],
+  },
+  {
+    name: "Bienes raíces",
+    symbols: [
+      "PLD", "AMT", "EQIX", "CCI", "PSA", "O", "WELL", "DLR", "SPG", "AVB",
+      "EQR", "VICI", "SBAC", "IRM", "ARE", "VTR", "MAA", "ESS", "UDR",
+      "CPT", "KIM", "REG", "HST", "EXR", "INVH", "CSGP",
+    ],
+  },
+  {
+    name: "Materiales",
+    symbols: [
+      "LIN", "APD", "SHW", "ECL", "FCX", "NEM", "DOW", "DD", "PPG", "NUE",
+      "VMC", "MLM", "ALB", "IFF", "CTVA", "LYB", "CE", "AVY", "PKG", "IP",
+      "BALL", "AMCR", "STLD",
+    ],
+  },
+  {
+    name: "Otras del Nasdaq",
+    symbols: [
+      "ASML", "AZN", "BIIB", "CCEP", "CEG", "CSGP", "CPRT", "EXC", "GEHC",
+      "GFS", "ILMN", "LULU", "MELI", "MRVL", "MSTR", "NXPI", "PDD", "TEAM",
+      "TTD", "VRSK", "WDAY", "ZS",
+    ],
+  },
+];
 
+// S&P 500 + Nasdaq-100 combinados y sin duplicados — se usa para validar
+// acceso (`isPaidSymbol`) y como universo plano en el selector normal del
+// gráfico.
 export const PAID_SYMBOLS: string[] = Array.from(
-  new Set<string>([...NASDAQ100_SYMBOLS, ...SP500_SYMBOLS])
+  new Set<string>([
+    ...NASDAQ100_SYMBOLS,
+    ...SECTORS.flatMap((s) => s.symbols),
+  ])
 ).sort();
 
 export function isFreeSymbol(symbol: string): boolean {

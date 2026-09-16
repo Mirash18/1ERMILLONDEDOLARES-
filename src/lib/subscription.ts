@@ -98,3 +98,36 @@ export async function getAccess(): Promise<Access> {
     ? { status: "activa", allowed: true }
     : { status: "sin-suscripcion", allowed: false };
 }
+
+/**
+ * `true` si hay una cuenta con sesión iniciada — sin importar si paga o no.
+ *
+ * Existe por una decisión puntual de Alejo (15 sept. 2026): mientras se
+ * prueba la Sala de Trading, cualquiera que se registre (gratis) puede
+ * buscar y guardar acciones del universo pagado ahí — no hace falta
+ * suscripción activa todavía. A futuro eso se vuelve parte del plan de
+ * $25/mes (junto con las clases de Miguel Cortés); por eso esto vive
+ * separado de `getAccess()` en vez de cambiar esa función, para que el día
+ * que se decida cobrarlo sea un solo interruptor por apagar aquí, sin tocar
+ * el resto del código que ya usa `hasSymbolAccess()`.
+ */
+export async function isRegistered(): Promise<boolean> {
+  if (!accountsConfigured()) return false;
+  const { userId } = await auth();
+  return Boolean(userId);
+}
+
+/**
+ * Único punto que deciden las rutas de datos (`/api/candles`,
+ * `/api/premarket`, `/api/earnings`, `/api/universe`, `/api/quotes`) para
+ * saber si dejan pasar un símbolo del universo pagado.
+ *
+ * `scope === "sala"` es la Sala de Trading: ahí basta con estar registrado
+ * (ver `isRegistered()` arriba). En cualquier otro contexto (portada,
+ * /introduccion) se exige lo de siempre: suscripción activa.
+ */
+export async function hasSymbolAccess(scope: string | null): Promise<boolean> {
+  if (scope === "sala") return isRegistered();
+  const access = await getAccess();
+  return access.allowed;
+}

@@ -28,7 +28,13 @@ import type { MarketSession } from "./marketData";
 
 let client: Redis | null | undefined;
 
-function getClient(): Redis | null {
+/**
+ * El mismo cliente de Redis, para quien necesite guardar algo que no es
+ * caché de mercado (por ejemplo, la lista de seguimiento de cada usuario en
+ * `src/lib/watchlist.ts`) — esos datos no expiran solos, así que no pasan
+ * por `getCached`/`setCached` (que siempre le ponen un TTL).
+ */
+export function getRedisClient(): Redis | null {
   if (client !== undefined) return client;
   const url = process.env.REDIS_KV_REST_API_URL;
   const token = process.env.REDIS_KV_REST_API_TOKEN;
@@ -42,7 +48,7 @@ type Cached<T> = {
 };
 
 export async function getCached<T>(key: string): Promise<Cached<T> | null> {
-  const redis = getClient();
+  const redis = getRedisClient();
   if (!redis) return null;
   try {
     return await redis.get<Cached<T>>(key);
@@ -58,7 +64,7 @@ export async function setCached<T>(
   value: T,
   ttlSeconds: number
 ): Promise<void> {
-  const redis = getClient();
+  const redis = getRedisClient();
   if (!redis) return;
   try {
     const entry: Cached<T> = { value, fetchedAt: Date.now() };

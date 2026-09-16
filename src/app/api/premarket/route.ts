@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getExtendedQuote } from "@/lib/marketData";
-import { getAccess } from "@/lib/subscription";
+import { hasSymbolAccess } from "@/lib/subscription";
 import { isFreeSymbol, isPaidSymbol } from "@/lib/universe";
 
 /**
@@ -12,6 +12,7 @@ import { isFreeSymbol, isPaidSymbol } from "@/lib/universe";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = (searchParams.get("symbol") ?? "SPY").toUpperCase();
+  const scope = searchParams.get("scope");
 
   if (!isFreeSymbol(symbol)) {
     if (!isPaidSymbol(symbol)) {
@@ -20,8 +21,7 @@ export async function GET(request: Request) {
         { status: 404 }
       );
     }
-    const access = await getAccess();
-    if (!access.allowed) {
+    if (!(await hasSymbolAccess(scope))) {
       return NextResponse.json(
         { error: "símbolo no disponible en el nivel gratuito" },
         { status: 403 }

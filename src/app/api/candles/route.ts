@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCandles } from "@/lib/marketData";
-import { getAccess } from "@/lib/subscription";
+import { hasSymbolAccess } from "@/lib/subscription";
 import { isFreeSymbol, isPaidSymbol } from "@/lib/universe";
 
 // Marcos de tiempo que el selector del gráfico puede pedir.
@@ -10,11 +10,13 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = (searchParams.get("symbol") ?? "SPY").toUpperCase();
   const interval = searchParams.get("interval") ?? "1day";
+  // `scope=sala` relaja la regla a "solo estar registrado" — ver
+  // hasSymbolAccess() en subscription.ts para el porqué.
+  const scope = searchParams.get("scope");
 
   // El universo gratuito se sirve siempre. El universo pagado (S&P 500 /
-  // Nasdaq-100, ver src/lib/universe.ts) SOLO si el servidor confirma que
-  // hay una suscripción activa — nunca se confía en nada que diga el
-  // navegador sobre su propio acceso.
+  // Nasdaq-100, ver src/lib/universe.ts) SOLO si el servidor confirma
+  // acceso — nunca se confía en nada que diga el navegador.
   if (!isFreeSymbol(symbol)) {
     if (!isPaidSymbol(symbol)) {
       return NextResponse.json(
@@ -22,8 +24,7 @@ export async function GET(request: Request) {
         { status: 404 }
       );
     }
-    const access = await getAccess();
-    if (!access.allowed) {
+    if (!(await hasSymbolAccess(scope))) {
       return NextResponse.json(
         { error: "símbolo no disponible en el nivel gratuito" },
         { status: 403 }
