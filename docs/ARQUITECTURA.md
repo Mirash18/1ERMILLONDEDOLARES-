@@ -513,15 +513,25 @@ trimestral) de la acción que se está mirando — como hace TradingView, pero
 sin el ícono sobre la vela: una nota aparte, para que quede claro que es
 una estimación.
 
-- Twelve Data sí tiene un calendario de earnings futuro real
+- Twelve Data tiene un calendario de earnings futuro real
   (`/earnings_calendar`), pero requiere plan Grow/Pro/Ultra/Venture/
   Enterprise — con el plan gratuito devuelve 403.
-- Mientras tanto, `src/lib/earnings.ts` calcula una **estimación**: toma el
-  historial de earnings pasados (`/earnings`, que sí está en el plan
-  gratuito), promedia el intervalo entre los últimos reportes (~91 días,
-  las empresas son bastante regulares) y proyecta esa cadencia desde el
-  último reporte conocido. Se marca "(estimado)" en todas partes — nunca se
-  presenta como la fecha real que confirmó la empresa.
+- La idea era estimarlo desde el histórico (`/earnings`) en su lugar — una
+  prueba inicial con AAPL respondió 200 con datos reales, pero al probar
+  con más símbolos (META, MSFT, GOOGL, JPM...) todos devolvieron el mismo
+  403: *"available exclusively with grow or pro or ultra or venture or
+  enterprise plans"*. Ese primer éxito con AAPL parece haber sido un caso
+  aislado (¿caché del lado de Twelve Data?) — en la práctica, **`/earnings`
+  también está bloqueado en el plan gratuito**, no solo
+  `/earnings_calendar`.
+- **Estado real:** `src/lib/earnings.ts` queda construido y listo (calcula
+  la estimación promediando el intervalo entre los últimos reportes), pero
+  mientras el plan siga siendo gratuito no hay de dónde sacar ni el
+  histórico — la insignia simplemente no va a aparecer nunca (falla en
+  silencio, no rompe nada). El día que se suba de plan, esto se enciende
+  solo sin tocar código — es una razón más (junto con la licencia "display"
+  y el límite de 800 créditos/día) para subir de plan antes de lanzar en
+  serio.
 - El día que se suba de plan de Twelve Data, cambiar esta función para
   llamar `/earnings_calendar` es lo único que hay que tocar — la ruta
   (`/api/earnings`), la caché y el badge en `CandleChart.tsx` quedan
