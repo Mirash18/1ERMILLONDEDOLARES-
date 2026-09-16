@@ -506,6 +506,33 @@ reprodujo y encontró la causa real:
 vuelve a fallar de forma parecida, se deja de mostrar la insignia de
 pre-mercado en silencio en vez de tumbar la página entera.
 
+## Aviso de earnings próximos (15 sept. 2026)
+
+Alejo pidió avisar cuando se acerca la fecha de earnings (reporte
+trimestral) de la acción que se está mirando — como hace TradingView, pero
+sin el ícono sobre la vela: una nota aparte, para que quede claro que es
+una estimación.
+
+- Twelve Data sí tiene un calendario de earnings futuro real
+  (`/earnings_calendar`), pero requiere plan Grow/Pro/Ultra/Venture/
+  Enterprise — con el plan gratuito devuelve 403.
+- Mientras tanto, `src/lib/earnings.ts` calcula una **estimación**: toma el
+  historial de earnings pasados (`/earnings`, que sí está en el plan
+  gratuito), promedia el intervalo entre los últimos reportes (~91 días,
+  las empresas son bastante regulares) y proyecta esa cadencia desde el
+  último reporte conocido. Se marca "(estimado)" en todas partes — nunca se
+  presenta como la fecha real que confirmó la empresa.
+- El día que se suba de plan de Twelve Data, cambiar esta función para
+  llamar `/earnings_calendar` es lo único que hay que tocar — la ruta
+  (`/api/earnings`), la caché y el badge en `CandleChart.tsx` quedan
+  iguales.
+- Solo aparece si el earning estimado cae dentro de los próximos 21 días
+  (`EARNINGS_WARNING_DAYS`) — con meses de anticipación no aporta nada.
+- Se cachea 24h (Redis) por símbolo: la fecha no cambia varias veces al
+  día, así que no hay razón para pedirla seguido.
+- No aplica a ETFs (SPY, GLD): no reportan earnings, así que ahí
+  simplemente no aparece nada — no es un error.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

@@ -12,7 +12,12 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { CandleSeries, ExtendedQuote } from "@/lib/marketData";
+import type { EarningsInfo } from "@/lib/earnings";
 import { FREE_SYMBOLS } from "@/lib/universe";
+
+// A cuántos días o menos de un earning estimado aparece el aviso — no tiene
+// caso mostrarlo con meses de anticipación, ver docs/ARQUITECTURA.md.
+const EARNINGS_WARNING_DAYS = 21;
 
 const TIMEFRAMES = [
   { key: "1h", label: "Hora" },
@@ -441,6 +446,8 @@ export function CandleChart() {
   const [priceY, setPriceY] = useState<number | null>(null);
   // Último precio fuera de sesión — hacia dónde viene abriendo el mercado.
   const [extended, setExtended] = useState<ExtendedQuote | null>(null);
+  // Próximo earning estimado del símbolo actual (ver src/lib/earnings.ts).
+  const [earnings, setEarnings] = useState<EarningsInfo | null>(null);
 
   const palette = PALETTES[theme];
 
@@ -782,6 +789,28 @@ export function CandleChart() {
     };
   }, [symbol]);
 
+  // Próximo earning estimado (ver src/lib/earnings.ts). La fecha no cambia
+  // durante el día, así que basta con pedirla al cambiar de símbolo — el
+  // servidor además la cachea 24h, así que ni eso gasta créditos de más.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/earnings?symbol=${symbol}`);
+        const json: EarningsInfo = await res.json();
+        if (!cancelled) setEarnings(json);
+      } catch {
+        if (!cancelled) setEarnings(null);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
   // Los formateadores del eje se vuelven a aplicar cada vez que cambia el
   // marco de tiempo. Es importante que sean funciones nuevas: lightweight-
   // charts guarda en caché las etiquetas ya calculadas, y si se le deja la
@@ -890,6 +919,17 @@ export function CandleChart() {
   const secondsToNextCandle =
     nowSeconds === null ? null : nextCandleBoundary(nowSeconds, timeframe) - nowSeconds;
 
+  // Días que faltan para el earning estimado (negativo si ya pasó). `null`
+  // si no hay estimación (ETFs como SPY/GLD, o todavía sin cargar).
+  const earningsDaysAway =
+    !earnings?.nextEstimatedDate || nowSeconds === null
+      ? null
+      : Math.ceil(
+          (new Date(`${earnings.nextEstimatedDate}T00:00:00Z`).getTime() / 1000 -
+            nowSeconds) /
+            86400
+        );
+
   return (
     <div
       className="rounded-lg border p-4 transition-colors"
@@ -961,40 +1001,69 @@ export function CandleChart() {
 
         {/* Hacia dónde viene abriendo el mercado. Solo aparece fuera de la
             sesión regular y cuando el plan de datos entrega precio extendido. */}
-        {/* `typeof === "number"` a propósito, no `!== null`: si la petición
-            falló (símbolo no disponible, error de red, etc.) `extended`
-            trae un `price` en `undefined`, no `null` — con `!== null` esa
-            comparación pasaba igual y `undefined.toFixed()` tumbaba toda la
-            página. Pasó de verdad con símbolos del universo pagado antes de
-            que /api/premarket los reconociera (ver ARQUITECTURA.md). */}
-        {extended &&
-          typeof extended.price === "number" &&
-          extended.session !== "regular" && (
-          <span
-            className="ml-auto flex items-center gap-2 rounded px-2 py-0.5"
-            style={{ backgroundColor: palette.badgeBg }}
-            title={
-              extended.timestamp
-                ? `Último precio fuera de sesión: ${formatCrosshairTime(extended.timestamp, true)}`
-                : undefined
-            }
-          >
-            <span className="opacity-70">
-              {SESSION_LABEL[extended.session] ?? "FUERA DE SESIÓN"}
-            </span>
-            <span>{extended.price.toFixed(2)}</span>
-            {typeof extended.percentChange === "number" && (
-              <span
-                style={{
-                  color: extended.percentChange >= 0 ? "#089981" : "#F23645",
-                }}
-              >
-                {extended.percentChange >= 0 ? "+" : ""}
-                {extended.percentChange.toFixed(2)}%
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {/* Aviso de earning próximo — a propósito NO es un ícono sobre la
+              vela (como el de TradingView): es una nota aparte, para que
+              quede claro que es una fecha ESTIMADA nuestra (calculada del
+              patrón de reportes pasados), no un dato confirmado por la
+              empresa. Ver src/lib/earnings.ts. Solo aparece si falta poco
+              (EARNINGS_WARNING_DAYS) y todavía no pasó. */}
+          {earningsDaysAway !== null &&
+            earningsDaysAway >= 0 &&
+            earningsDaysAway <= EARNINGS_WARNING_DAYS && (
+            <span
+              className="flex items-center gap-2 rounded px-2 py-0.5"
+              style={{ backgroundColor: palette.badgeBg }}
+              title={`Fecha estimada a partir del patrón de reportes anteriores: ${earnings?.nextEstimatedDate}`}
+            >
+              <span className="opacity-70">EARNINGS</span>
+              <span>
+                {earningsDaysAway === 0
+                  ? "hoy"
+                  : `en ${earningsDaysAway} día${earningsDaysAway === 1 ? "" : "s"}`}
               </span>
-            )}
-          </span>
-        )}
+              <span className="opacity-50">(estimado)</span>
+            </span>
+          )}
+
+          {/* Hacia dónde viene abriendo el mercado. Solo aparece fuera de la
+              sesión regular y cuando el plan de datos entrega precio
+              extendido. `typeof === "number"` a propósito, no `!== null`:
+              si la petición falló (símbolo no disponible, error de red,
+              etc.) `extended` trae un `price` en `undefined`, no `null` —
+              con `!== null` esa comparación pasaba igual y
+              `undefined.toFixed()` tumbaba toda la página. Pasó de verdad
+              con símbolos del universo pagado antes de que /api/premarket
+              los reconociera (ver ARQUITECTURA.md). */}
+          {extended &&
+            typeof extended.price === "number" &&
+            extended.session !== "regular" && (
+            <span
+              className="flex items-center gap-2 rounded px-2 py-0.5"
+              style={{ backgroundColor: palette.badgeBg }}
+              title={
+                extended.timestamp
+                  ? `Último precio fuera de sesión: ${formatCrosshairTime(extended.timestamp, true)}`
+                  : undefined
+              }
+            >
+              <span className="opacity-70">
+                {SESSION_LABEL[extended.session] ?? "FUERA DE SESIÓN"}
+              </span>
+              <span>{extended.price.toFixed(2)}</span>
+              {typeof extended.percentChange === "number" && (
+                <span
+                  style={{
+                    color: extended.percentChange >= 0 ? "#089981" : "#F23645",
+                  }}
+                >
+                  {extended.percentChange >= 0 ? "+" : ""}
+                  {extended.percentChange.toFixed(2)}%
+                </span>
+              )}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="relative">
