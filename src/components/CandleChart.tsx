@@ -453,6 +453,9 @@ export function CandleChart({
   const [extended, setExtended] = useState<ExtendedQuote | null>(null);
   // Próximo earning estimado del símbolo actual (ver src/lib/earnings.ts).
   const [earnings, setEarnings] = useState<EarningsInfo | null>(null);
+  // Panel de favoritas (Sala de Trading): empieza oculto, un botón lo
+  // despliega y lo vuelve a esconder — no siempre ocupando espacio.
+  const [showWatchlist, setShowWatchlist] = useState(false);
 
   const palette = PALETTES[theme];
 
@@ -995,6 +998,21 @@ export function CandleChart({
             onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
           />
+          {fillHeight && (
+            <button
+              onClick={() => setShowWatchlist((v) => !v)}
+              className="rounded px-2.5 py-1.5 font-mono text-xs transition-colors"
+              style={{
+                backgroundColor: showWatchlist ? palette.buttonActiveBg : palette.buttonBg,
+                color: showWatchlist ? palette.buttonActiveText : palette.buttonText,
+              }}
+              title="Mostrar u ocultar tus favoritas"
+              aria-label="Mostrar u ocultar tus favoritas"
+              aria-pressed={showWatchlist}
+            >
+              ★ Favoritas
+            </button>
+          )}
           <button
             onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             className="rounded px-2.5 py-1.5 text-sm transition-colors"
@@ -1139,7 +1157,10 @@ export function CandleChart({
 
   if (!fillHeight) return chartPanel;
 
-  // Sala de Trading: el gráfico y la lista de seguimiento lado a lado.
+  // Sala de Trading: el botón "★ Favoritas" del toolbar despliega y
+  // esconde el panel — no ocupa espacio hasta que alguien lo pide.
+  if (!showWatchlist) return chartPanel;
+
   return (
     <div className="flex h-full gap-3">
       {chartPanel}

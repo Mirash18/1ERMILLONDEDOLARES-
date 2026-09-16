@@ -599,6 +599,10 @@ de Trading — la portada y `/introduccion` quedan igual que antes.
 - Si no hay cuenta, el panel muestra un aviso con botones de crear
   cuenta/iniciar sesión en vez del buscador — nunca deja ver ni intentar
   nada del universo pagado sin sesión.
+- **Desplegable (sept. 2026):** el panel no está siempre visible — un botón
+  "★ Favoritas" en la barra del gráfico lo despliega y lo vuelve a esconder
+  (`showWatchlist` en `CandleChart.tsx`), para no restarle espacio al
+  gráfico cuando nadie lo está usando.
 
 ## Decisiones pendientes
 
