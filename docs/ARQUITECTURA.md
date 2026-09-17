@@ -758,11 +758,27 @@ pensados para fondo blanco, con texto oscuro que sobre nuestro fondo oscuro
 queda casi invisible. Por eso "Update profile" y "+ Add email address" (que
 sí usan `colorPrimary`, dorado) se veían bien, y todo lo demás no.
 
-**Corregido:** se agregó `baseTheme: dark` (paquete `@clerk/themes`) al
-`appearance` de `ClerkProvider` en `layout.tsx` — con eso, todos los
-valores por defecto de Clerk (no solo los que pisamos a mano) parten ya
-pensados para fondo oscuro, y nuestras variables de marca se aplican
-encima sin dejar huecos invisibles.
+**Primer intento (insuficiente):** se agregó `baseTheme: dark` (paquete
+`@clerk/themes`) — ayuda para lo que no se pisa a mano, pero no resolvió el
+problema real: se probó en producción y el título seguía en `rgb(33,33,38)`.
+
+**Causa real:** Clerk Core 3 renombró las variables de texto —
+`colorText` → **`colorForeground`**, `colorTextSecondary` →
+**`colorMutedForeground`**, `colorInputText` → **`colorInputForeground`**,
+`colorInputBackground` → **`colorInput`**. Su documentación dice que los
+nombres viejos siguen funcionando como alias, pero en la práctica no se
+estaban aplicando — `--clerk-color-foreground` (la variable CSS real que
+lee `cl-headerTitle`) se quedaba vacía y caía a su valor por defecto
+`light-dark(#212126, white)`, que en un documento sin `color-scheme: dark`
+declarado resuelve al primer valor (`#212126`, para fondo blanco).
+
+**Corregido de verdad:** se cambiaron las `variables` a los nombres nuevos
+(`colorForeground`, `colorMutedForeground`, `colorInputForeground`,
+`colorInput`, más `colorPrimaryForeground` para el texto sobre los botones
+dorados) — verificado con el DOM real: el título pasó de `rgb(33,33,38)` a
+`rgb(224,224,224)` (nuestro `#E0E0E0`). `baseTheme: dark` se dejó puesto,
+sigue siendo útil para todo lo que no se pisa a mano (colorDanger,
+colorSuccess, etc.).
 
 ## Decisiones pendientes
 

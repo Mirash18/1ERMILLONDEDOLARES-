@@ -15,22 +15,27 @@ export const metadata: Metadata = {
 // Clerk (modal de login, /sign-in, /sign-up, "Manage account") no se vean
 // fuera de lugar.
 //
-// `baseTheme: dark` es la pieza que faltaba (17 sept. 2026): sin ella,
-// Clerk parte de sus valores por defecto pensados para fondo blanco —
-// nuestras `variables` solo pisaban un puñado de colores, y el resto (como
-// los títulos del modal "Manage account") se quedaban con texto casi negro
-// sobre nuestro fondo oscuro, prácticamente invisible. Con el tema oscuro
-// de base, esos valores por defecto también quedan pensados para fondo
-// oscuro, y nuestras variables de marca se aplican encima sin problema.
+// `baseTheme: dark` (17 sept. 2026) para que todo lo que no se pisa abajo
+// (colorDanger, colorSuccess, colorNeutral...) ya parta pensado para fondo
+// oscuro. Pero el problema real de fondo era otro: Clerk Core 3 renombró
+// las variables de texto (`colorText` → `colorForeground`,
+// `colorTextSecondary` → `colorMutedForeground`, `colorInputText` →
+// `colorInputForeground`, `colorInputBackground` → `colorInput`) — la
+// documentación dice que los nombres viejos siguen funcionando como alias,
+// pero en la práctica no se estaban aplicando: el título del modal
+// "Manage account" se pintaba en `rgb(33,33,38)` (el valor por defecto
+// para fondo BLANCO) porque `--clerk-color-foreground` nunca se llenaba.
+// Con los nombres nuevos sí se aplica.
 const clerkAppearance = {
   baseTheme: dark,
   variables: {
     colorPrimary: "#D4AF37",
+    colorPrimaryForeground: "#0B0E14",
     colorBackground: "#131722",
-    colorInputBackground: "#0B0E14",
-    colorText: "#E0E0E0",
-    colorTextSecondary: "#9AA1AE",
-    colorInputText: "#E0E0E0",
+    colorInput: "#0B0E14",
+    colorForeground: "#E0E0E0",
+    colorMutedForeground: "#9AA1AE",
+    colorInputForeground: "#E0E0E0",
     borderRadius: "0.5rem",
   },
 };
