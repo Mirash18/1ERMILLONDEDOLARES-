@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 import { accountsConfigured } from "@/lib/subscription";
 import "./globals.css";
 
@@ -11,8 +12,18 @@ export const metadata: Metadata = {
 };
 
 // Tokens de marca (ver docs/ARQUITECTURA.md) para que los componentes de
-// Clerk (modal de login, /sign-in, /sign-up) no se vean fuera de lugar.
+// Clerk (modal de login, /sign-in, /sign-up, "Manage account") no se vean
+// fuera de lugar.
+//
+// `baseTheme: dark` es la pieza que faltaba (17 sept. 2026): sin ella,
+// Clerk parte de sus valores por defecto pensados para fondo blanco —
+// nuestras `variables` solo pisaban un puñado de colores, y el resto (como
+// los títulos del modal "Manage account") se quedaban con texto casi negro
+// sobre nuestro fondo oscuro, prácticamente invisible. Con el tema oscuro
+// de base, esos valores por defecto también quedan pensados para fondo
+// oscuro, y nuestras variables de marca se aplican encima sin problema.
 const clerkAppearance = {
+  baseTheme: dark,
   variables: {
     colorPrimary: "#D4AF37",
     colorBackground: "#131722",

@@ -743,6 +743,27 @@ una conversación aparte más adelante, esto no las incluye.
   (Fase 4, Vimeo). Por ahora, lo que da (`accesoManualHasta`) ya es
   reconocido en todas partes donde se usa `getAccess()`/`hasSymbolAccess()`.
 
+## Bug real: texto casi invisible en los modales de Clerk (17 sept. 2026)
+
+Alejo reportó que el modal "Manage account" (y el menú del avatar) se veían
+"como si el ojo humano no pudiera verlos" — texto prácticamente invisible.
+Se reprodujo: el título "Profile details" se pintaba en `rgb(33,33,38)`
+(casi negro) sobre nuestro fondo oscuro (`#131722`).
+
+Causa: nunca se le dijo a Clerk que partiera de su **tema oscuro base**. El
+`appearance` solo pisaba un puñado de `variables` (colorPrimary,
+colorBackground, colorText...) — el resto de los estilos internos de Clerk
+(títulos de sección, etiquetas, etc.) seguían con los valores por defecto
+pensados para fondo blanco, con texto oscuro que sobre nuestro fondo oscuro
+queda casi invisible. Por eso "Update profile" y "+ Add email address" (que
+sí usan `colorPrimary`, dorado) se veían bien, y todo lo demás no.
+
+**Corregido:** se agregó `baseTheme: dark` (paquete `@clerk/themes`) al
+`appearance` de `ClerkProvider` en `layout.tsx` — con eso, todos los
+valores por defecto de Clerk (no solo los que pisamos a mano) parten ya
+pensados para fondo oscuro, y nuestras variables de marca se aplican
+encima sin dejar huecos invisibles.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
