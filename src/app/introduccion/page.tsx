@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { AuthStatus } from "@/components/AuthStatus";
 import { CandleChart } from "@/components/CandleChart";
-import { accountsConfigured } from "@/lib/subscription";
+import { accountsConfigured, getAccess } from "@/lib/subscription";
 
 // Módulos del programa de estudio. Los títulos y el orden son la base típica
 // de cualquier curso de introducción al trading — el contenido real (video,
@@ -46,6 +46,35 @@ export default async function Introduccion() {
   const { userId } = await auth();
   if (!userId) {
     redirect("/sign-in");
+  }
+
+  // Decisión de Alejo (17 sept. 2026): "Introducción" deja de ser abierta a
+  // cualquiera que se registre — ahora hace falta que él dé acceso a mano
+  // desde /admin (o, más adelante, una suscripción pagada). Cualquiera de
+  // las dos formas ya cuenta como "activa" en getAccess() — ver
+  // subscription.ts.
+  const access = await getAccess();
+  if (!access.allowed) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center bg-bg px-6 text-center">
+        <p className="mb-2 font-mono text-xs uppercase tracking-[0.14em] text-gold">
+          Introducción
+        </p>
+        <h1 className="mb-3 font-display text-2xl font-medium text-text">
+          Todavía no tienes acceso aquí
+        </h1>
+        <p className="max-w-sm text-sm text-text-soft">
+          Esta sección se habilita a mano, uno por uno. Escríbenos y te
+          damos acceso.
+        </p>
+        <Link
+          href="/"
+          className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+        >
+          ← volver
+        </Link>
+      </div>
+    );
   }
 
   return (

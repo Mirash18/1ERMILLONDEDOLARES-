@@ -780,6 +780,30 @@ dorados) — verificado con el DOM real: el título pasó de `rgb(33,33,38)` a
 sigue siendo útil para todo lo que no se pisa a mano (colorDanger,
 colorSuccess, etc.).
 
+## "Introducción" pasa a requerir aprobación (17 sept. 2026)
+
+Decisión de Alejo: "Introducción" deja de ser abierta a cualquiera que se
+registre — ahora hace falta que él dé acceso a mano desde `/admin` (o, más
+adelante, una suscripción pagada). Antes usaba solo `isRegistered()`; ahora
+usa `getAccess().allowed` (que ya reconoce tanto `accesoManualHasta` como
+una suscripción real, ver la sección de arriba) — quien no tiene acceso ve
+un aviso claro en la misma página en vez de que la página simplemente no
+cargue nada.
+
+Como consecuencia, el redirect después de registrarse
+(`NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL`) volvió a apuntar a `/`
+en vez de `/introduccion` — no tenía sentido mandar a alguien recién
+registrado directo a una pared bloqueada.
+
+También se mejoró `/admin`: antes, si alguien sin permiso entraba (por
+ejemplo, Alejo conectado con su cuenta de pruebas en vez de la admin), la
+página mandaba de vuelta a la portada **en silencio** — parecía que no
+pasaba nada. Ahora explica con qué correo está conectado y qué hacer.
+
+La Sala de Trading (`scope=sala`, solo pide estar registrado) **no
+cambió** — sigue siendo la decisión de prueba de Fase 3 documentada arriba,
+aparte de esto.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
