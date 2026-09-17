@@ -88,6 +88,26 @@ function accesoManualVigente(
 }
 
 /**
+ * Semana gratis de la Sala de Trading (decisión de Alejo, 17 sept. 2026):
+ * quien se registra puede entrar a la Sala de Trading sin que nadie le dé
+ * acceso a mano — pero solo durante los primeros `FREE_TRIAL_DAYS` días
+ * desde que se creó la cuenta. Pasado ese tiempo, vuelve a hacer falta
+ * suscripción paga o un acceso manual desde /admin, igual que Introducción.
+ *
+ * Se calcula con la fecha de creación de la cuenta en Clerk (`createdAt`),
+ * sin guardar nada aparte: no hay que dar de alta ni limpiar una fecha por
+ * usuario, y no depende de ningún webhook — el día 8 deja de cumplirse
+ * solo. Aplica igual a cuentas que ya existían antes de este cambio: su
+ * semana empezó el día en que se registraron.
+ */
+export const FREE_TRIAL_DAYS = 7;
+
+export function pruebaGratisVigente(createdAt: number): boolean {
+  const vence = createdAt + FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+  return Date.now() < vence;
+}
+
+/**
  * Estado de acceso de quien está haciendo la petición.
  *
  * Sin `scope`, solo cuenta la suscripción paga real (`suscripcion:
@@ -98,7 +118,9 @@ function accesoManualVigente(
  * Con `scope`, además de la suscripción paga también cuenta el acceso
  * manual dado a esa sección específica desde /admin (ver
  * `publicMetadata.acceso` — src/app/api/admin/access/route.ts). Pasada la
- * fecha límite, vuelve a comportarse como si nunca se hubiera dado.
+ * fecha límite, vuelve a comportarse como si nunca se hubiera dado. Para
+ * `scope === "sala"` cuenta además la semana gratis automática (ver
+ * `pruebaGratisVigente()` arriba).
  *
  * Es `async` a propósito aunque hoy no espere nada más que Clerk: así el
  * día que entre otro proveedor de pagos no hay que tocar a quien la llama.
@@ -123,8 +145,10 @@ export async function getAccess(scope?: Scope): Promise<Access> {
   const activaPorPago = user?.publicMetadata?.suscripcion === "activa";
   const acceso = user?.publicMetadata?.acceso as AccesoManual | undefined;
   const activaManualmente = scope ? accesoManualVigente(acceso, scope) : false;
+  const enPruebaGratis =
+    scope === "sala" && user ? pruebaGratisVigente(user.createdAt) : false;
 
-  return activaPorPago || activaManualmente
+  return activaPorPago || activaManualmente || enPruebaGratis
     ? { status: "activa", allowed: true }
     : { status: "sin-suscripcion", allowed: false };
 }

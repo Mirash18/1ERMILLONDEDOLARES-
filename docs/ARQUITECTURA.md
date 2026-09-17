@@ -901,6 +901,28 @@ nada. Se limpió la bandera a mano; no hace falta ningún cambio de código,
 solo quedó registrado acá por si vuelve a aparecer una cuenta con acceso
 que no se explica por `acceso`.
 
+## Semana gratis de la Sala de Trading al registrarse (17 sept. 2026)
+
+Decisión de Alejo: cualquiera que se registre entra a la Sala de Trading
+gratis durante **7 días** desde que crea la cuenta — pasada esa semana,
+vuelve a hacer falta suscripción paga o un acceso manual desde /admin,
+igual que Introducción. Reemplaza la regla vieja (registrarse = acceso
+total sin límite de tiempo) que se había dejado atrás sin querer.
+
+`pruebaGratisVigente(createdAt)` en `subscription.ts` lo calcula al vuelo
+comparando la fecha de creación de la cuenta en Clerk con `Date.now()` —
+no guarda nada nuevo, no hace falta webhook ni cron: el día 8 deja de
+cumplirse solo. `getAccess("sala")` la suma como una tercera forma de
+tener acceso (junto a la suscripción paga y el acceso manual). Aplica
+igual a cuentas que ya existían antes de este cambio, contando desde su
+fecha real de registro.
+
+Como esto puede dejar entrar a alguien sin que aparezca ninguna fecha en
+`acceso.sala` (igual que ya pasaba con `suscripcion: "activa"`, ver la
+sección de arriba), `/admin` ahora también muestra "prueba gratis" en la
+columna de Sala de Trading cuando aplica — para que nunca quede
+escondido por qué alguien sigue entrando.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

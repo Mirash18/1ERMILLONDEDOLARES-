@@ -351,6 +351,13 @@ export function AdminUserTable() {
                         <span className="text-green">
                           hasta {formatFecha(u.acceso[s.scope] ?? null)}
                         </span>
+                      ) : s.scope === "sala" && u.pruebaGratisVigente ? (
+                        <span
+                          className="text-gold-light"
+                          title="Semana gratis automática por registrarse — nadie le dio este acceso a mano."
+                        >
+                          prueba gratis
+                        </span>
                       ) : (
                         <span className="text-text-soft opacity-40">—</span>
                       )}
