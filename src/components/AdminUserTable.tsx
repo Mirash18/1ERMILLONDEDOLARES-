@@ -84,8 +84,13 @@ export function AdminUserTable() {
     });
   }
 
+  // Nunca deja las secciones en cero: si esa fuera la única marcada, el
+  // clic no hace nada — si no, los botones de dar/quitar acceso se
+  // desactivan solos (por no tener a qué sección aplicar) sin que se note
+  // por qué, y parece que el panel dejó de funcionar.
   function toggleScope(s: Scope) {
     setScopes((prev) => {
+      if (prev.has(s) && prev.size === 1) return prev;
       const next = new Set(prev);
       if (next.has(s)) next.delete(s);
       else next.add(s);
@@ -212,7 +217,7 @@ export function AdminUserTable() {
           onClick={() =>
             setScopes(
               todasLasSecciones
-                ? new Set()
+                ? new Set([SCOPES[0].scope])
                 : new Set(SCOPES.map((s) => s.scope))
             )
           }
