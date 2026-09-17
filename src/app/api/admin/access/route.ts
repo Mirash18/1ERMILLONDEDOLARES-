@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { isAdmin } from "@/lib/admin";
+import { ACCESO_BLOQUEADO } from "@/lib/scopes";
 import type { Scope } from "@/lib/subscription";
 
 const SCOPES: Scope[] = ["introduccion", "sala"];
@@ -12,21 +13,22 @@ const SCOPES: Scope[] = ["introduccion", "sala"];
  *
  * Body: `{ userIds: string[], scopes: ("introduccion" | "sala")[], days:
  * number | null }` — `days` es cuántos días de acceso a partir de ahora (7,
- * 14, 30...); `null` quita el acceso a esas secciones (borra su fecha en
- * vez de ponerla en el pasado, para no dejar basura en los metadatos).
- * Mandar varias secciones a la vez (o todas, ver "Todas" en
- * AdminUserTable.tsx) es lo normal cuando alguien contrata todo — así no
- * hace falta un viaje de ida y vuelta por sección.
+ * 14, 30...); `null` es "Eliminar acceso": guarda `ACCESO_BLOQUEADO` en vez
+ * de una fecha, para que quede bloqueada de verdad — incluyendo cualquier
+ * forma automática de entrar (como la semana gratis de la Sala de Trading,
+ * ver pruebaGratisVigente() en subscription.ts), no solo el permiso manual
+ * que se le hubiera dado antes. Mandar varias secciones a la vez (o todas,
+ * ver "Todas" en AdminUserTable.tsx) es lo normal cuando alguien contrata
+ * todo — así no hace falta un viaje de ida y vuelta por sección.
  *
- * `publicMetadata.acceso` guarda una fecha por sección (`{ introduccion:
+ * `publicMetadata.acceso` guarda un valor por sección (`{ introduccion:
  * "...", sala: "..." }`). Clerk hace merge profundo de los metadatos: una
  * llave que no se menciona en la actualización se queda tal cual estaba
  * (no desaparece), así que omitirla (con `delete`, por ejemplo) NO la
- * borra — Clerk la repone del valor anterior porque "no dijiste que la
+ * cambia — Clerk repone el valor anterior porque "no dijiste que la
  * tocara". Por eso aquí se lee primero el usuario (para no pisar otras
- * secciones que no vinieron en este pedido) y, para quitar acceso, se
- * manda esa llave con valor `null` explícito — la única forma en que
- * Clerk realmente la borra.
+ * secciones que no vinieron en este pedido) y siempre se manda un valor
+ * explícito para las secciones pedidas.
  */
 export async function POST(request: Request) {
   if (!(await isAdmin())) {
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
   const hasta =
     days !== null
       ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
-      : null;
+      : ACCESO_BLOQUEADO;
 
   const client = await clerkClient();
   const resultados = await Promise.all(

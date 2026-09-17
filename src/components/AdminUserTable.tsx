@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AdminUserRow } from "@/app/api/admin/users/route";
-import { SCOPE_LABELS, type Scope } from "@/lib/scopes";
+import { ACCESO_BLOQUEADO, SCOPE_LABELS, type Scope } from "@/lib/scopes";
 
 const SCOPES: { scope: Scope; label: string }[] = (
   Object.entries(SCOPE_LABELS) as [Scope, string][]
@@ -25,7 +25,24 @@ function formatFecha(iso: string | null): string {
 }
 
 function accesoVigente(iso: string | null | undefined): boolean {
-  return Boolean(iso && new Date(iso).getTime() > Date.now());
+  return Boolean(
+    iso && iso !== ACCESO_BLOQUEADO && new Date(iso).getTime() > Date.now()
+  );
+}
+
+function accesoBloqueado(valor: string | null | undefined): boolean {
+  return valor === ACCESO_BLOQUEADO;
+}
+
+// Cuánto tiempo se marca una cuenta como "nueva" en la tabla — pedido de
+// Alejo (17 sept. 2026) para poder identificar de un vistazo a quién le
+// vale la pena mandarle en el futuro un correo distinto (de bienvenida, de
+// recordatorio de la semana gratis, etc.) sin tener que fijarse en la
+// fecha de registro de cada fila.
+const DIAS_CUENTA_NUEVA = 4;
+
+function esCuentaNueva(createdAt: number): boolean {
+  return Date.now() - createdAt < DIAS_CUENTA_NUEVA * 24 * 60 * 60 * 1000;
 }
 
 export function AdminUserTable() {
@@ -101,10 +118,11 @@ export function AdminUserTable() {
 
   const todasLasSecciones = scopes.size === SCOPES.length;
 
-  // `days: null` es "Eliminar acceso": borra la fecha de acceso de esa
-  // sección de inmediato (no espera a que venza sola) — la cuenta sigue
-  // pudiendo iniciar sesión, solo pierde esa sección. Para bloquear la
-  // cuenta entera, ver aplicarBan() más abajo.
+  // `days: null` es "Eliminar acceso": bloquea esa sección de inmediato,
+  // incluso si aplicaría una puerta automática (como la semana gratis de
+  // la Sala de Trading) — la cuenta sigue pudiendo iniciar sesión, solo
+  // pierde esa sección. Para bloquear la cuenta entera, ver aplicarBan()
+  // más abajo.
   async function aplicarAcceso(days: number | null) {
     if (selected.size === 0 || scopes.size === 0) return;
     setWorking(true);
@@ -128,7 +146,7 @@ export function AdminUserTable() {
       } else {
         setMensaje(
           days === null
-            ? `Acceso a ${nombresSecciones} eliminado a ${selected.size} persona(s) — se borró el tiempo que tenía, no cuenta ninguna fecha anterior.`
+            ? `Acceso a ${nombresSecciones} bloqueado para ${selected.size} persona(s) — no entran ni con la semana gratis ni con ningún permiso anterior.`
             : `Acceso a ${nombresSecciones} dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
         );
         setSelected(new Set());
@@ -341,7 +359,19 @@ export function AdminUserTable() {
                       aria-label={`Seleccionar ${u.email ?? u.id}`}
                     />
                   </td>
-                  <td className="px-3 py-2 text-text">{u.email ?? "(sin correo)"}</td>
+                  <td className="px-3 py-2 text-text">
+                    <span className={esCuentaNueva(u.createdAt) ? "text-gold-light" : undefined}>
+                      {u.email ?? "(sin correo)"}
+                    </span>
+                    {esCuentaNueva(u.createdAt) && (
+                      <span
+                        className="ml-2 rounded border border-gold-light/40 px-1.5 py-0.5 text-[10px] text-gold-light"
+                        title={`Registrado hace menos de ${DIAS_CUENTA_NUEVA} días`}
+                      >
+                        nuevo
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-text-soft">
                     {formatFecha(new Date(u.createdAt).toISOString())}
                   </td>
@@ -350,6 +380,13 @@ export function AdminUserTable() {
                       {accesoVigente(u.acceso[s.scope]) ? (
                         <span className="text-green">
                           hasta {formatFecha(u.acceso[s.scope] ?? null)}
+                        </span>
+                      ) : accesoBloqueado(u.acceso[s.scope]) ? (
+                        <span
+                          className="text-red"
+                          title="Un admin usó Eliminar acceso acá — bloqueado incluso si aplicaría la semana gratis u otra puerta automática."
+                        >
+                          bloqueado
                         </span>
                       ) : s.scope === "sala" && u.pruebaGratisVigente ? (
                         <span

@@ -23,7 +23,7 @@
  */
 
 import { auth, currentUser } from "@clerk/nextjs/server";
-import type { Scope } from "@/lib/scopes";
+import { ACCESO_BLOQUEADO, type Scope } from "@/lib/scopes";
 
 export type { Scope } from "@/lib/scopes";
 
@@ -84,7 +84,26 @@ function accesoManualVigente(
   scope: Scope
 ): boolean {
   const hasta = acceso?.[scope];
-  return typeof hasta === "string" && new Date(hasta).getTime() > Date.now();
+  return (
+    typeof hasta === "string" &&
+    hasta !== ACCESO_BLOQUEADO &&
+    new Date(hasta).getTime() > Date.now()
+  );
+}
+
+/**
+ * `true` cuando un admin usó "Eliminar acceso" para esa sección (ver
+ * ACCESO_BLOQUEADO en scopes.ts). Distinto de simplemente no tener nada
+ * guardado: un bloqueo explícito también apaga cualquier forma automática
+ * de entrar a esa sección (como la semana gratis de la Sala de Trading,
+ * más abajo) — si no, "Eliminar acceso" no eliminaría nada de verdad para
+ * alguien que todavía estuviera dentro de su semana gratis.
+ */
+function accesoBloqueado(
+  acceso: AccesoManual | undefined,
+  scope: Scope
+): boolean {
+  return acceso?.[scope] === ACCESO_BLOQUEADO;
 }
 
 /**
@@ -144,9 +163,12 @@ export async function getAccess(scope?: Scope): Promise<Access> {
   const user = await currentUser();
   const activaPorPago = user?.publicMetadata?.suscripcion === "activa";
   const acceso = user?.publicMetadata?.acceso as AccesoManual | undefined;
+  const bloqueado = scope ? accesoBloqueado(acceso, scope) : false;
   const activaManualmente = scope ? accesoManualVigente(acceso, scope) : false;
   const enPruebaGratis =
-    scope === "sala" && user ? pruebaGratisVigente(user.createdAt) : false;
+    scope === "sala" && user && !bloqueado
+      ? pruebaGratisVigente(user.createdAt)
+      : false;
 
   return activaPorPago || activaManualmente || enPruebaGratis
     ? { status: "activa", allowed: true }
