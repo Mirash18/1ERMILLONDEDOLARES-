@@ -628,6 +628,20 @@ que es como se le dice en español) en el gráfico y en `/introduccion` — el
 código interno (`sma20`, `sma40`, etc.) se quedó igual, solo cambió lo que
 se ve.
 
+## El gráfico abre centrado en lo reciente, no en todo el historial (17 sept. 2026)
+
+En Día/Semana/Mes, el gráfico abría con `fitContent()` — las 300 velas
+completas apretadas en el panel. Para ver el precio actual había que hacer
+zoom y arrastrarse hasta la derecha cada vez que se cambiaba de acción o de
+marco. Alejo lo pidió explícitamente pensando en gente mayor a la que le
+cuesta desplazarse por el gráfico.
+
+**Corregido:** ahora se muestra solo la mitad más reciente de lo cargado
+(150 de las 300 velas), con un margen del 5% a la derecha — las velas
+quedan al doble de grandes y el gráfico ya arranca centrado en el valor de
+hoy, sin que nadie tenga que moverse para llegar ahí. El marco "Hora" ya
+hacía algo parecido (centrado en la sesión del día) y se quedó igual.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

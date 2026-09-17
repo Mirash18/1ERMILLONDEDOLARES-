@@ -935,7 +935,29 @@ export function CandleChart({
       });
     } else {
       candleSeriesRef.current.setMarkers([]);
-      chartRef.current?.timeScale().fitContent();
+
+      // En Día/Semana/Mes se pide de fondo bastante historia (para que las
+      // PM de 100 y 200 períodos tengan con qué calcularse), pero a nadie
+      // le sirve abrir viendo esa historia entera apretada — hay que
+      // arrastrarse hasta la derecha para llegar al precio de hoy. Alejo lo
+      // pidió explícitamente pensando en gente mayor a la que le cuesta
+      // desplazarse: en vez de `fitContent()` (que muestra el 100% de lo
+      // cargado), se muestra solo la mitad más reciente — así ya arranca
+      // centrado en el valor actual, con las velas al doble de grandes.
+      if (data.candles.length > 1) {
+        const mitad = Math.floor(data.candles.length / 2);
+        const desde = data.candles[mitad].time;
+        const ultima = data.candles[data.candles.length - 1].time;
+        // Un margen a la derecha (5% del tramo mostrado) para que la
+        // última vela no quede pegada al borde del panel.
+        const margen = Math.round((ultima - desde) * 0.05);
+        chartRef.current?.timeScale().setVisibleRange({
+          from: desde as unknown as UTCTimestamp,
+          to: (ultima + margen) as unknown as UTCTimestamp,
+        });
+      } else {
+        chartRef.current?.timeScale().fitContent();
+      }
     }
 
     // Un frame después, para que el autoscale del precio ya haya aplicado
