@@ -115,6 +115,23 @@ notificaciones, y nombre + cargo de quien firma. Pendiente de que Alejo
 confirme si hay una entidad legal constituida para el proyecto — sin eso no
 se puede firmar el MNDA ni seguir con la cotización de la licencia.
 
+**Respuesta de TradingView (17 sept. 2026, Álvaro M. Roo):** confirmado —
+necesitan *"a valid registered company name (not individual nor
+sole-founder ventures)"* antes de seguir con el MNDA. Y la estructura
+comercial es una **tarifa fija anual**, sin importar número de usuarios ni
+uso — no hay un plan que escale con el tamaño del proyecto. Con esto:
+
+- **Queda en pausa** hasta que exista una empresa constituida — no es algo
+  que se pueda resolver solo con más conversación con TradingView.
+- No se sabe todavía el monto de esa tarifa anual — si en algún momento
+  interesa saberlo (para decidir si vale la pena incorporar una empresa),
+  hay que volver a escribirles.
+- **Mientras tanto, `lightweight-charts` (lo que ya está construido) sigue
+  siendo la solución** — ya tiene velas, PM 20/40/100/200, Bollinger,
+  volumen, zoom inteligente, pantalla completa y watchlist. El proyecto no
+  se queda sin gráfico por esto, solo sin las herramientas de dibujo
+  (líneas de tendencia, canales, etc.) que solo trae TradingView.
+
 ## Datos de mercado (Fase 2 — completa)
 
 - **Proveedor elegido: Twelve Data.** Por ahora se está usando una
