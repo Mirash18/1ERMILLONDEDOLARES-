@@ -311,20 +311,21 @@ export function AdminUserTable() {
                   {s.label}
                 </th>
               ))}
+              <th className="px-3 py-2">Suscripción</th>
               <th className="px-3 py-2">Cuenta</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={4 + SCOPES.length} className="px-3 py-4 text-text-soft">
+                <td colSpan={5 + SCOPES.length} className="px-3 py-4 text-text-soft">
                   Cargando…
                 </td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={4 + SCOPES.length} className="px-3 py-4 text-text-soft">
+                <td colSpan={5 + SCOPES.length} className="px-3 py-4 text-text-soft">
                   Sin resultados.
                 </td>
               </tr>
@@ -355,6 +356,15 @@ export function AdminUserTable() {
                       )}
                     </td>
                   ))}
+                  <td className="px-3 py-2">
+                    {u.suscripcionActiva ? (
+                      <span className="text-gold" title="Tiene suscripción paga real activa — entra a todo sin importar lo que digan las columnas de arriba.">
+                        activa (paga)
+                      </span>
+                    ) : (
+                      <span className="text-text-soft opacity-40">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     {u.banned ? (
                       <span className="text-red">baneado</span>

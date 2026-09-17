@@ -8,6 +8,7 @@ export type AdminUserRow = {
   email: string | null;
   createdAt: number;
   acceso: Partial<Record<Scope, string | null>>;
+  suscripcionActiva: boolean;
   banned: boolean;
 };
 
@@ -34,6 +35,11 @@ export async function GET(request: Request) {
       (u.publicMetadata?.acceso as
         | Partial<Record<Scope, string | null>>
         | undefined) ?? {},
+    // Suscripción paga real (`publicMetadata.suscripcion`, ver
+    // subscription.ts) — deja pasar a todo sin importar `acceso`. Se manda
+    // aparte para que /admin nunca esconda que una cuenta sigue entrando
+    // por esta vía aunque se le hayan quitado los permisos manuales.
+    suscripcionActiva: u.publicMetadata?.suscripcion === "activa",
     banned: Boolean(u.banned),
   }));
 
