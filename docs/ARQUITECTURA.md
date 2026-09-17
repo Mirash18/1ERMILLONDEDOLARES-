@@ -801,8 +801,50 @@ página mandaba de vuelta a la portada **en silencio** — parecía que no
 pasaba nada. Ahora explica con qué correo está conectado y qué hacer.
 
 La Sala de Trading (`scope=sala`, solo pide estar registrado) **no
-cambió** — sigue siendo la decisión de prueba de Fase 3 documentada arriba,
-aparte de esto.
+cambió acá** — sigue siendo la decisión de prueba de Fase 3 documentada
+arriba, aparte de esto. (Sí cambió más tarde el mismo día — ver la
+siguiente sección.)
+
+## Acceso por sección, no todo junto (17 sept. 2026)
+
+Decisión de Alejo: quiere decidir, **correo por correo**, quién entra a
+Introducción y quién a la Sala de Trading — no las dos con un solo
+interruptor. Hasta ahora `/admin` solo tenía un botón de "dar acceso" que
+abría las dos a la vez (porque Introducción usaba `getAccess()` y Sala
+usaba `isRegistered()`, mecanismos distintos que igual terminaban dejando
+pasar a cualquiera registrado en Sala).
+
+Cambios:
+
+- `publicMetadata.acceso` reemplaza a `publicMetadata.accesoManualHasta`:
+  ahora es un objeto `{ introduccion?: fecha, sala?: fecha }` en vez de una
+  sola fecha. Clerk no hace merge profundo de metadatos anidados, así que
+  `/api/admin/access` lee el usuario primero, cambia solo la sección
+  pedida y manda el objeto completo de vuelta — si no, dar acceso a Sala
+  borraría sin querer el de Introducción (o viceversa).
+- `getAccess(scope)` en `subscription.ts` ahora recibe la sección
+  (`"introduccion" | "sala"`). Sin sección (como en `/suscripcion`), solo
+  cuenta la suscripción paga real — un acceso manual dado para una sección
+  puntual no debe hacer parecer que la membresía completa de $25/mes está
+  activa.
+- La Sala de Trading deja de estar abierta a cualquier registrado: ahora
+  usa `getAccess("sala")`, igual que Introducción usa
+  `getAccess("introduccion")`. `isRegistered()` (la función que daba ese
+  paso libre) se eliminó por no tener más usos.
+- `/admin` (`AdminUserTable.tsx`) muestra una columna de estado por
+  sección y un selector de "Sección: Introducción / Sala de Trading" — los
+  botones de dar/quitar acceso aplican solo a la sección elegida.
+- La Sala de Trading (`Watchlist.tsx`) ahora distingue, al no tener
+  acceso, entre "no tiene cuenta" (invita a registrarse) y "tiene cuenta
+  pero no se le ha dado acceso" (mensaje de "escríbenos"), en vez de
+  mostrarle a alguien ya registrado un botón de "crear cuenta" que no
+  tenía sentido para su caso.
+
+Primer correo con acceso a ambas secciones: `alejo012g@gmail.com` (cuenta
+de pruebas de Alejo), dado a mano vía la API de Clerk para no depender de
+que el panel ya estuviera desplegado. Los siguientes correos (los
+estudiantes de Miguel Cortés) se agregan uno por uno desde `/admin` ya con
+esto en producción.
 
 ## Decisiones pendientes
 

@@ -12,9 +12,9 @@ type Sector = { name: string; symbols: string[] };
  * "Populares" de ProRealTime, con un buscador por categorías como el
  * "Agregar símbolo" de TradingView para armarla.
  *
- * Decisión temporal (15 sept. 2026, ver hasSymbolAccess() en
- * subscription.ts): solo hace falta tener cuenta, no pagar. A futuro esto
- * se vuelve parte del plan de $25/mes.
+ * Decisión de Alejo (17 sept. 2026): la Sala de Trading pasa a necesitar
+ * acceso dado a mano desde /admin, igual que Introducción — antes bastaba
+ * con tener cuenta (ver getSymbolAccess() en subscription.ts).
  */
 export function Watchlist({
   symbol,
@@ -29,6 +29,7 @@ export function Watchlist({
   // le muestra por un instante el aviso de "crea una cuenta" a alguien que
   // sí tiene sesión, mientras carga.
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -36,15 +37,17 @@ export function Watchlist({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todos");
 
-  // El servidor decide (según la sesión) si hay cuenta, y trae las
-  // categorías — el navegador nunca decide esto por su cuenta.
+  // El servidor decide (según la sesión) si hay cuenta y si tiene acceso
+  // dado, y trae las categorías — el navegador nunca decide esto por su
+  // cuenta.
   useEffect(() => {
     let cancelled = false;
     fetch("/api/universe?scope=sala")
       .then((res) => res.json())
-      .then((json: { sectors?: Sector[]; allowed?: boolean }) => {
+      .then((json: { sectors?: Sector[]; allowed?: boolean; status?: string }) => {
         if (cancelled) return;
         setAllowed(Boolean(json.allowed));
+        setStatus(json.status ?? null);
         setSectors(json.sectors ?? []);
       })
       .catch(() => {
@@ -131,34 +134,51 @@ export function Watchlist({
   }
 
   if (!allowed) {
+    // Sin cuenta: invita a registrarse. Con cuenta pero sin acceso dado:
+    // decirlo tal cual — no tiene sentido ofrecerle "crear cuenta" a
+    // alguien que ya tiene una.
+    if (status === "sin-cuenta") {
+      return (
+        <div
+          className="flex w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-lg border p-6 text-center"
+          style={{ backgroundColor: palette.wrapperBg, borderColor: palette.wrapperBorder }}
+        >
+          <p className="font-mono text-[11px] leading-relaxed" style={{ color: palette.textSoft }}>
+            Crea una cuenta gratis para armar tu lista de seguimiento con
+            cualquier acción del S&P 500 y el Nasdaq.
+          </p>
+          <div className="flex gap-2">
+            <SignUpButton mode="modal">
+              <button
+                type="button"
+                className="rounded bg-gold px-3 py-1.5 font-mono text-[11px] font-medium text-bg"
+              >
+                Crear cuenta
+              </button>
+            </SignUpButton>
+            <SignInButton mode="modal">
+              <button
+                type="button"
+                className="rounded border px-3 py-1.5 font-mono text-[11px]"
+                style={{ borderColor: palette.wrapperBorder, color: palette.textSoft }}
+              >
+                Iniciar sesión
+              </button>
+            </SignInButton>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         className="flex w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-lg border p-6 text-center"
         style={{ backgroundColor: palette.wrapperBg, borderColor: palette.wrapperBorder }}
       >
         <p className="font-mono text-[11px] leading-relaxed" style={{ color: palette.textSoft }}>
-          Crea una cuenta gratis para armar tu lista de seguimiento con
-          cualquier acción del S&P 500 y el Nasdaq.
+          Todavía no tienes acceso a la Sala de Trading. Esta sección se
+          habilita a mano, uno por uno — escríbenos y te damos acceso.
         </p>
-        <div className="flex gap-2">
-          <SignUpButton mode="modal">
-            <button
-              type="button"
-              className="rounded bg-gold px-3 py-1.5 font-mono text-[11px] font-medium text-bg"
-            >
-              Crear cuenta
-            </button>
-          </SignUpButton>
-          <SignInButton mode="modal">
-            <button
-              type="button"
-              className="rounded border px-3 py-1.5 font-mono text-[11px]"
-              style={{ borderColor: palette.wrapperBorder, color: palette.textSoft }}
-            >
-              Iniciar sesión
-            </button>
-          </SignInButton>
-        </div>
       </div>
     );
   }

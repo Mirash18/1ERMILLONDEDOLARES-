@@ -23,6 +23,9 @@
  */
 
 import { auth, currentUser } from "@clerk/nextjs/server";
+import type { Scope } from "@/lib/scopes";
+
+export type { Scope } from "@/lib/scopes";
 
 export type SubscriptionStatus =
   | "activa" // tiene cuenta y la suscripción está al día
@@ -69,13 +72,38 @@ export function paymentsConfigured(): boolean {
   );
 }
 
+// Las secciones que se pueden habilitar por separado (Scope) y sus
+// nombres para mostrar viven en `scopes.ts`, no acá — ese archivo no
+// importa nada de Clerk, así que también lo puede usar un componente de
+// cliente como AdminUserTable.tsx sin arrastrar código de servidor al
+// bundle del navegador.
+type AccesoManual = Partial<Record<Scope, string>>;
+
+function accesoManualVigente(
+  acceso: AccesoManual | undefined,
+  scope: Scope
+): boolean {
+  const hasta = acceso?.[scope];
+  return typeof hasta === "string" && new Date(hasta).getTime() > Date.now();
+}
+
 /**
  * Estado de acceso de quien está haciendo la petición.
  *
- * Es `async` a propósito aunque hoy no espere nada: cuando entre Clerk sí va
- * a consultar su servidor, y así el cambio no obliga a tocar a quien la llama.
+ * Sin `scope`, solo cuenta la suscripción paga real (`suscripcion:
+ * "activa"`) — así `/suscripcion` puede seguir preguntando "¿ya pagó?" sin
+ * que un acceso manual dado para una sección puntual haga parecer que la
+ * membresía completa está activa.
+ *
+ * Con `scope`, además de la suscripción paga también cuenta el acceso
+ * manual dado a esa sección específica desde /admin (ver
+ * `publicMetadata.acceso` — src/app/api/admin/access/route.ts). Pasada la
+ * fecha límite, vuelve a comportarse como si nunca se hubiera dado.
+ *
+ * Es `async` a propósito aunque hoy no espere nada más que Clerk: así el
+ * día que entre otro proveedor de pagos no hay que tocar a quien la llama.
  */
-export async function getAccess(): Promise<Access> {
+export async function getAccess(scope?: Scope): Promise<Access> {
   if (!accountsConfigured()) {
     return { status: "sin-configurar", allowed: false };
   }
@@ -88,21 +116,13 @@ export async function getAccess(): Promise<Access> {
   // Se consulta el usuario completo (en vez de leer `sessionClaims`) porque
   // eso funciona con la configuración por defecto de Clerk, sin tener que ir
   // al dashboard a personalizar el token de sesión para que incluya
-  // `publicMetadata`. Cuando Stripe confirme un pago (Fase 3, pendiente), su
+  // `publicMetadata`. Cuando MercadoPago confirme un pago (pendiente), su
   // webhook escribe `suscripcion: "activa"` en los metadatos públicos de
   // este mismo usuario — hasta entonces nadie tiene suscripción activa.
   const user = await currentUser();
   const activaPorPago = user?.publicMetadata?.suscripcion === "activa";
-
-  // Acceso manual (17 sept. 2026): mientras no hay cobro automático listo,
-  // Alejo da acceso a mano desde /admin por un tiempo limitado (1 semana, 2
-  // semanas, 1 mes) — pensado para las clases de Miguel Cortés y cualquier
-  // otra cosa que en el futuro quede detrás de esta misma puerta. Se guarda
-  // como fecha límite en `accesoManualHasta` (ver src/lib/admin.ts) — pasada
-  // esa fecha, vuelve a comportarse como si nunca se hubiera dado.
-  const hasta = user?.publicMetadata?.accesoManualHasta;
-  const activaManualmente =
-    typeof hasta === "string" && new Date(hasta).getTime() > Date.now();
+  const acceso = user?.publicMetadata?.acceso as AccesoManual | undefined;
+  const activaManualmente = scope ? accesoManualVigente(acceso, scope) : false;
 
   return activaPorPago || activaManualmente
     ? { status: "activa", allowed: true }
@@ -110,34 +130,19 @@ export async function getAccess(): Promise<Access> {
 }
 
 /**
- * `true` si hay una cuenta con sesión iniciada — sin importar si paga o no.
+ * Igual que `getAccess()`, pero para lo que deciden las rutas de datos
+ * (`/api/candles`, `/api/premarket`, `/api/earnings`, `/api/universe`,
+ * `/api/quotes`) sobre si dejan pasar un símbolo del universo pagado.
  *
- * Existe por una decisión puntual de Alejo (15 sept. 2026): mientras se
- * prueba la Sala de Trading, cualquiera que se registre (gratis) puede
- * buscar y guardar acciones del universo pagado ahí — no hace falta
- * suscripción activa todavía. A futuro eso se vuelve parte del plan de
- * $25/mes (junto con las clases de Miguel Cortés); por eso esto vive
- * separado de `getAccess()` en vez de cambiar esa función, para que el día
- * que se decida cobrarlo sea un solo interruptor por apagar aquí, sin tocar
- * el resto del código que ya usa `hasSymbolAccess()`.
+ * `scope === "sala"` es la Sala de Trading — exige suscripción activa o
+ * acceso manual a "sala". Cualquier otro contexto (portada, dentro de
+ * /introduccion) exige suscripción activa real, sin acceso manual de por
+ * medio: ver el símbolo ahí no es lo mismo que poder entrar a la página.
  */
-export async function isRegistered(): Promise<boolean> {
-  if (!accountsConfigured()) return false;
-  const { userId } = await auth();
-  return Boolean(userId);
+export async function getSymbolAccess(scope: string | null): Promise<Access> {
+  return scope === "sala" ? getAccess("sala") : getAccess();
 }
 
-/**
- * Único punto que deciden las rutas de datos (`/api/candles`,
- * `/api/premarket`, `/api/earnings`, `/api/universe`, `/api/quotes`) para
- * saber si dejan pasar un símbolo del universo pagado.
- *
- * `scope === "sala"` es la Sala de Trading: ahí basta con estar registrado
- * (ver `isRegistered()` arriba). En cualquier otro contexto (portada,
- * /introduccion) se exige lo de siempre: suscripción activa.
- */
 export async function hasSymbolAccess(scope: string | null): Promise<boolean> {
-  if (scope === "sala") return isRegistered();
-  const access = await getAccess();
-  return access.allowed;
+  return (await getSymbolAccess(scope)).allowed;
 }

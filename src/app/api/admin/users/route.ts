@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { isAdmin } from "@/lib/admin";
+import type { Scope } from "@/lib/subscription";
 
 export type AdminUserRow = {
   id: string;
   email: string | null;
   createdAt: number;
-  accesoManualHasta: string | null;
+  acceso: Partial<Record<Scope, string>>;
 };
 
 export async function GET(request: Request) {
@@ -28,10 +29,9 @@ export async function GET(request: Request) {
     id: u.id,
     email: u.primaryEmailAddress?.emailAddress ?? null,
     createdAt: u.createdAt,
-    accesoManualHasta:
-      typeof u.publicMetadata?.accesoManualHasta === "string"
-        ? u.publicMetadata.accesoManualHasta
-        : null,
+    acceso:
+      (u.publicMetadata?.acceso as Partial<Record<Scope, string>> | undefined) ??
+      {},
   }));
 
   return NextResponse.json({ users: rows, totalCount });

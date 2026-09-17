@@ -1,7 +1,8 @@
 /**
  * Panel de administración (`/admin`) — quién puede entrar, y qué puede
  * hacer ahí: ver la lista de gente registrada y darle o quitarle acceso
- * manual (ver `accesoManualHasta` en `subscription.ts`).
+ * manual, sección por sección (ver `publicMetadata.acceso` en
+ * `subscription.ts`).
  *
  * La lista de correos admin vive en una variable de entorno
  * (`ADMIN_EMAILS`, separados por coma) — nunca hardcodeada en el código,

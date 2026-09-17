@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AdminUserRow } from "@/app/api/admin/users/route";
+import { SCOPE_LABELS, type Scope } from "@/lib/scopes";
+
+const SCOPES: { scope: Scope; label: string }[] = (
+  Object.entries(SCOPE_LABELS) as [Scope, string][]
+).map(([scope, label]) => ({ scope, label }));
 
 const DURACIONES = [
   { label: "1 semana", days: 7 },
@@ -19,7 +24,7 @@ function formatFecha(iso: string | null): string {
   });
 }
 
-function accesoVigente(iso: string | null): boolean {
+function accesoVigente(iso: string | undefined): boolean {
   return Boolean(iso && new Date(iso).getTime() > Date.now());
 }
 
@@ -28,6 +33,7 @@ export function AdminUserTable() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [scope, setScope] = useState<Scope>("introduccion");
   const [working, setWorking] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -79,11 +85,12 @@ export function AdminUserTable() {
     if (selected.size === 0) return;
     setWorking(true);
     setMensaje(null);
+    const seccion = SCOPES.find((s) => s.scope === scope)?.label ?? scope;
     try {
       const res = await fetch("/api/admin/access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userIds: Array.from(selected), days }),
+        body: JSON.stringify({ userIds: Array.from(selected), scope, days }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -91,8 +98,8 @@ export function AdminUserTable() {
       } else {
         setMensaje(
           days === null
-            ? `Acceso quitado a ${selected.size} persona(s).`
-            : `Acceso dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
+            ? `Acceso a ${seccion} quitado a ${selected.size} persona(s).`
+            : `Acceso a ${seccion} dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
         );
         setSelected(new Set());
         await load(query);
@@ -119,6 +126,26 @@ export function AdminUserTable() {
             ? `${selected.size} seleccionada(s)`
             : `${users.length} persona(s)`}
         </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-soft">
+          Sección:
+        </span>
+        {SCOPES.map((s) => (
+          <button
+            key={s.scope}
+            type="button"
+            onClick={() => setScope(s.scope)}
+            className={`rounded border px-3 py-1.5 font-mono text-[11px] transition-colors ${
+              scope === s.scope
+                ? "border-gold/50 bg-gold/10 text-gold"
+                : "border-border text-text-soft hover:border-gold/30"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -161,20 +188,24 @@ export function AdminUserTable() {
               </th>
               <th className="px-3 py-2">Correo</th>
               <th className="px-3 py-2">Registrado</th>
-              <th className="px-3 py-2">Acceso hasta</th>
+              {SCOPES.map((s) => (
+                <th key={s.scope} className="px-3 py-2">
+                  {s.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={4} className="px-3 py-4 text-text-soft">
+                <td colSpan={3 + SCOPES.length} className="px-3 py-4 text-text-soft">
                   Cargando…
                 </td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-4 text-text-soft">
+                <td colSpan={3 + SCOPES.length} className="px-3 py-4 text-text-soft">
                   Sin resultados.
                 </td>
               </tr>
@@ -194,15 +225,17 @@ export function AdminUserTable() {
                   <td className="px-3 py-2 text-text-soft">
                     {formatFecha(new Date(u.createdAt).toISOString())}
                   </td>
-                  <td className="px-3 py-2">
-                    {accesoVigente(u.accesoManualHasta) ? (
-                      <span className="text-green">
-                        hasta {formatFecha(u.accesoManualHasta)}
-                      </span>
-                    ) : (
-                      <span className="text-text-soft opacity-60">sin acceso</span>
-                    )}
-                  </td>
+                  {SCOPES.map((s) => (
+                    <td key={s.scope} className="px-3 py-2">
+                      {accesoVigente(u.acceso[s.scope]) ? (
+                        <span className="text-green">
+                          hasta {formatFecha(u.acceso[s.scope] ?? null)}
+                        </span>
+                      ) : (
+                        <span className="text-text-soft opacity-60">sin acceso</span>
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))}
           </tbody>

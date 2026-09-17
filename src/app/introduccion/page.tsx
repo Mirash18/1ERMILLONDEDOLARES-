@@ -50,10 +50,10 @@ export default async function Introduccion() {
 
   // Decisión de Alejo (17 sept. 2026): "Introducción" deja de ser abierta a
   // cualquiera que se registre — ahora hace falta que él dé acceso a mano
-  // desde /admin (o, más adelante, una suscripción pagada). Cualquiera de
-  // las dos formas ya cuenta como "activa" en getAccess() — ver
-  // subscription.ts.
-  const access = await getAccess();
+  // desde /admin, sección por sección (o, más adelante, una suscripción
+  // pagada). Cualquiera de las dos formas ya cuenta como "activa" en
+  // getAccess("introduccion") — ver subscription.ts.
+  const access = await getAccess("introduccion");
   if (!access.allowed) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center bg-bg px-6 text-center">
