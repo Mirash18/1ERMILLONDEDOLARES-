@@ -81,6 +81,10 @@ export function AdminUserTable() {
     });
   }
 
+  // `days: null` es "Quitar acceso permanente": borra la fecha de acceso
+  // de esa sección de inmediato (no espera a que venza sola) — la cuenta
+  // sigue pudiendo iniciar sesión, solo pierde esa sección. Para bloquear
+  // la cuenta entera, ver aplicarBan() más abajo.
   async function aplicarAcceso(days: number | null) {
     if (selected.size === 0) return;
     setWorking(true);
@@ -98,7 +102,7 @@ export function AdminUserTable() {
       } else {
         setMensaje(
           days === null
-            ? `Acceso a ${seccion} quitado a ${selected.size} persona(s).`
+            ? `Acceso a ${seccion} quitado de forma permanente a ${selected.size} persona(s) — ya no cuenta ninguna fecha anterior.`
             : `Acceso a ${seccion} dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
         );
         setSelected(new Set());
@@ -163,6 +167,15 @@ export function AdminUserTable() {
           placeholder="Buscar por correo…"
           className="w-full max-w-xs rounded border border-border bg-input px-3 py-2 font-mono text-xs text-text outline-none focus:border-gold/50"
         />
+        <label className="flex items-center gap-1.5 font-mono text-[11px] text-text-soft">
+          <input
+            type="checkbox"
+            checked={todosSeleccionados}
+            onChange={toggleTodos}
+            disabled={users.length === 0}
+          />
+          Seleccionar todas
+        </label>
         <span className="font-mono text-[11px] text-text-soft">
           {selected.size > 0
             ? `${selected.size} seleccionada(s)`
@@ -208,7 +221,7 @@ export function AdminUserTable() {
           onClick={() => aplicarAcceso(null)}
           className="rounded border border-red/40 px-3 py-1.5 font-mono text-[11px] text-red transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Quitar acceso
+          Quitar acceso permanente
         </button>
       </div>
 
