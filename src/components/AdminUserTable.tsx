@@ -100,10 +100,10 @@ export function AdminUserTable() {
 
   const todasLasSecciones = scopes.size === SCOPES.length;
 
-  // `days: null` es "Quitar acceso permanente": borra la fecha de acceso
-  // de esa sección de inmediato (no espera a que venza sola) — la cuenta
-  // sigue pudiendo iniciar sesión, solo pierde esa sección. Para bloquear
-  // la cuenta entera, ver aplicarBan() más abajo.
+  // `days: null` es "Eliminar acceso": borra la fecha de acceso de esa
+  // sección de inmediato (no espera a que venza sola) — la cuenta sigue
+  // pudiendo iniciar sesión, solo pierde esa sección. Para bloquear la
+  // cuenta entera, ver aplicarBan() más abajo.
   async function aplicarAcceso(days: number | null) {
     if (selected.size === 0 || scopes.size === 0) return;
     setWorking(true);
@@ -127,7 +127,7 @@ export function AdminUserTable() {
       } else {
         setMensaje(
           days === null
-            ? `Acceso a ${nombresSecciones} quitado de forma permanente a ${selected.size} persona(s) — ya no cuenta ninguna fecha anterior.`
+            ? `Acceso a ${nombresSecciones} eliminado a ${selected.size} persona(s) — se borró el tiempo que tenía, no cuenta ninguna fecha anterior.`
             : `Acceso a ${nombresSecciones} dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
         );
         setSelected(new Set());
@@ -263,7 +263,7 @@ export function AdminUserTable() {
           onClick={() => aplicarAcceso(null)}
           className="rounded border border-red/40 px-3 py-1.5 font-mono text-[11px] text-red transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Quitar acceso permanente
+          Eliminar acceso
         </button>
       </div>
 
