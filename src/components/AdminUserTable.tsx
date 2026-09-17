@@ -35,8 +35,11 @@ export function AdminUserTable() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Qué secciones tocan los botones de acceso de abajo — más de una a la
   // vez, para poder dar de alta a alguien en todo con un solo clic aunque
-  // más adelante se agreguen más secciones (ver "Todas" abajo).
-  const [scopes, setScopes] = useState<Set<Scope>>(new Set(["introduccion"]));
+  // más adelante se agreguen más secciones (ver "Todas" abajo). Empieza
+  // vacío a propósito (decisión de Alejo, 17 sept. 2026): que cada quien
+  // que entre a /admin elija a mano qué sección toca, en vez de heredar lo
+  // que haya quedado marcado la última vez que alguien más lo usó.
+  const [scopes, setScopes] = useState<Set<Scope>>(new Set());
   const [working, setWorking] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -84,13 +87,11 @@ export function AdminUserTable() {
     });
   }
 
-  // Nunca deja las secciones en cero: si esa fuera la única marcada, el
-  // clic no hace nada — si no, los botones de dar/quitar acceso se
-  // desactivan solos (por no tener a qué sección aplicar) sin que se note
-  // por qué, y parece que el panel dejó de funcionar.
+  // Cada botón de sección se prende/apaga por su cuenta, sin mínimo — se
+  // puede dejar todo desmarcado (los botones de acceso simplemente se
+  // desactivan hasta que se marque algo).
   function toggleScope(s: Scope) {
     setScopes((prev) => {
-      if (prev.has(s) && prev.size === 1) return prev;
       const next = new Set(prev);
       if (next.has(s)) next.delete(s);
       else next.add(s);
@@ -216,9 +217,7 @@ export function AdminUserTable() {
           type="button"
           onClick={() =>
             setScopes(
-              todasLasSecciones
-                ? new Set([SCOPES[0].scope])
-                : new Set(SCOPES.map((s) => s.scope))
+              todasLasSecciones ? new Set() : new Set(SCOPES.map((s) => s.scope))
             )
           }
           className={`rounded border px-3 py-1.5 font-mono text-[11px] font-medium transition-colors ${
