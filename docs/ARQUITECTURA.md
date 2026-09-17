@@ -718,6 +718,31 @@ nadie más pueda llamar la ruta y gastar créditos a propósito.
 **El universo pagado se queda sin calentar** hasta que se suba a un plan
 que lo permita económicamente — es la misma limitación de arriba.
 
+## Panel de administración y acceso manual (17 sept. 2026)
+
+Con el cobro automático todavía sin terminar (ver MercadoPago arriba) y las
+clases de Miguel Cortés como prioridad inmediata, Alejo pidió poder dar
+acceso a mano — sin esperar a que exista el checkout. Herramientas de
+dibujo (líneas, flechas movibles, texto, stickers) quedaron anotadas para
+una conversación aparte más adelante, esto no las incluye.
+
+- **`accesoManualHasta`** (metadatos públicos de Clerk, fecha ISO): nueva
+  forma de darle a alguien acceso — junto a la de siempre (`suscripcion:
+  "activa"`, que pondría el webhook de un cobro real). `getAccess()`
+  (`subscription.ts`) ahora acepta cualquiera de las dos — pasada la fecha,
+  vuelve a comportarse como si nunca se hubiera dado, sin que nadie tenga
+  que acordarse de quitarlo a mano.
+- **`/admin`** (protegido por `isAdmin()` — la lista de correos vive en
+  `ADMIN_EMAILS`, separados por coma; hoy solo `alejo012g@gmail.com`):
+  lista de todo el que se ha registrado (vía la API de Clerk), buscador por
+  correo, casillas de selección múltiple, y tres botones para dar acceso
+  (1 semana / 2 semanas / 1 mes) o quitarlo — a los seleccionados, de una
+  sola vez.
+- Todavía no hay una página real de "clases de Miguel Cortés" que usar como
+  destino — esta pieza queda lista para conectarse ahí el día que exista
+  (Fase 4, Vimeo). Por ahora, lo que da (`accesoManualHasta`) ya es
+  reconocido en todas partes donde se usa `getAccess()`/`hasSymbolAccess()`.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

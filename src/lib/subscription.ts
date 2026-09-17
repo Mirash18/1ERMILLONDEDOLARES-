@@ -92,9 +92,19 @@ export async function getAccess(): Promise<Access> {
   // webhook escribe `suscripcion: "activa"` en los metadatos públicos de
   // este mismo usuario — hasta entonces nadie tiene suscripción activa.
   const user = await currentUser();
-  const activa = user?.publicMetadata?.suscripcion === "activa";
+  const activaPorPago = user?.publicMetadata?.suscripcion === "activa";
 
-  return activa
+  // Acceso manual (17 sept. 2026): mientras no hay cobro automático listo,
+  // Alejo da acceso a mano desde /admin por un tiempo limitado (1 semana, 2
+  // semanas, 1 mes) — pensado para las clases de Miguel Cortés y cualquier
+  // otra cosa que en el futuro quede detrás de esta misma puerta. Se guarda
+  // como fecha límite en `accesoManualHasta` (ver src/lib/admin.ts) — pasada
+  // esa fecha, vuelve a comportarse como si nunca se hubiera dado.
+  const hasta = user?.publicMetadata?.accesoManualHasta;
+  const activaManualmente =
+    typeof hasta === "string" && new Date(hasta).getTime() > Date.now();
+
+  return activaPorPago || activaManualmente
     ? { status: "activa", allowed: true }
     : { status: "sin-suscripcion", allowed: false };
 }
