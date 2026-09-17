@@ -14,7 +14,7 @@ const modules = [
     tag: "Herramientas",
     title: "Calculadora y estudios",
     status: "Fase 5 — pendiente",
-    body: "Calculadora de velas (Black-Scholes) y estudios técnicos (MA, RSI, volumen).",
+    body: "Calculadora de velas (Black-Scholes) y estudios técnicos (PM, RSI, volumen).",
   },
 ];
 
