@@ -879,6 +879,28 @@ botón aparte en `/admin`, con confirmación antes de aplicarse. Un admin no
 se puede banear a sí mismo por accidente (se quedaría sin forma de entrar
 a deshacerlo).
 
+## Bug real: "Eliminar acceso" no bloqueaba a alguien con suscripción falsa (17 sept. 2026)
+
+Alejo probó "Eliminar acceso" con la cuenta `alejo30g@gmail.com` y,
+después de eliminarlo, esa cuenta seguía entrando a Introducción y Sala
+de Trading. No era un bug de código: esa cuenta tenía guardado
+`publicMetadata.suscripcion = "activa"` desde alguna prueba manual de
+hace tiempo (de cuando se armó el flujo de Stripe, nunca se limpió). Esa
+bandera es la de "suscripción paga real" — `getAccess()` la revisa
+aparte de `acceso` (el permiso manual por sección) y basta con que
+cualquiera de las dos esté activa para dejar pasar. "Eliminar acceso"
+solo toca `acceso`, nunca `suscripcion`, así que esa cuenta nunca perdió
+el acceso real por más que se le quitara el permiso manual.
+
+Se confirmó revisando las 4 cuentas registradas directamente contra la
+API de Clerk: solo `alejo30g@gmail.com` tenía esa bandera puesta; las
+otras tres estaban limpias. El webhook de Stripe (`/api/webhooks/stripe`)
+no puede haberla puesto de nuevo — sin `STRIPE_SECRET_KEY` /
+`STRIPE_WEBHOOK_SECRET` configuradas responde "no configurado" sin tocar
+nada. Se limpió la bandera a mano; no hace falta ningún cambio de código,
+solo quedó registrado acá por si vuelve a aparecer una cuenta con acceso
+que no se explica por `acceso`.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
