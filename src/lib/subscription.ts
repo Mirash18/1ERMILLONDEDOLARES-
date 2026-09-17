@@ -77,7 +77,7 @@ export function paymentsConfigured(): boolean {
 // importa nada de Clerk, así que también lo puede usar un componente de
 // cliente como AdminUserTable.tsx sin arrastrar código de servidor al
 // bundle del navegador.
-type AccesoManual = Partial<Record<Scope, string>>;
+type AccesoManual = Partial<Record<Scope, string | null>>;
 
 function accesoManualVigente(
   acceso: AccesoManual | undefined,

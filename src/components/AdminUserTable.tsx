@@ -24,7 +24,7 @@ function formatFecha(iso: string | null): string {
   });
 }
 
-function accesoVigente(iso: string | undefined): boolean {
+function accesoVigente(iso: string | null | undefined): boolean {
   return Boolean(iso && new Date(iso).getTime() > Date.now());
 }
 

@@ -7,7 +7,7 @@ export type AdminUserRow = {
   id: string;
   email: string | null;
   createdAt: number;
-  acceso: Partial<Record<Scope, string>>;
+  acceso: Partial<Record<Scope, string | null>>;
   banned: boolean;
 };
 
@@ -31,8 +31,9 @@ export async function GET(request: Request) {
     email: u.primaryEmailAddress?.emailAddress ?? null,
     createdAt: u.createdAt,
     acceso:
-      (u.publicMetadata?.acceso as Partial<Record<Scope, string>> | undefined) ??
-      {},
+      (u.publicMetadata?.acceso as
+        | Partial<Record<Scope, string | null>>
+        | undefined) ?? {},
     banned: Boolean(u.banned),
   }));
 

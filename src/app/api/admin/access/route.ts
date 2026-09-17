@@ -19,11 +19,14 @@ const SCOPES: Scope[] = ["introduccion", "sala"];
  * hace falta un viaje de ida y vuelta por sección.
  *
  * `publicMetadata.acceso` guarda una fecha por sección (`{ introduccion:
- * "...", sala: "..." }`). Clerk reemplaza ese objeto entero en cada
- * actualización (no hace merge profundo) — por eso aquí se lee primero el
- * usuario, se cambian solo las secciones pedidas, y se manda el objeto
- * completo de vuelta, para no borrar sin querer el acceso ya dado a otra
- * sección que no vino en este pedido.
+ * "...", sala: "..." }`). Clerk hace merge profundo de los metadatos: una
+ * llave que no se menciona en la actualización se queda tal cual estaba
+ * (no desaparece), así que omitirla (con `delete`, por ejemplo) NO la
+ * borra — Clerk la repone del valor anterior porque "no dijiste que la
+ * tocara". Por eso aquí se lee primero el usuario (para no pisar otras
+ * secciones que no vinieron en este pedido) y, para quitar acceso, se
+ * manda esa llave con valor `null` explícito — la única forma en que
+ * Clerk realmente la borra.
  */
 export async function POST(request: Request) {
   if (!(await isAdmin())) {
@@ -53,14 +56,13 @@ export async function POST(request: Request) {
     userIds.map(async (userId) => {
       try {
         const user = await client.users.getUser(userId);
-        const acceso: Partial<Record<Scope, string>> = {
+        const acceso: Partial<Record<Scope, string | null>> = {
           ...(user.publicMetadata?.acceso as
-            | Partial<Record<Scope, string>>
+            | Partial<Record<Scope, string | null>>
             | undefined),
         };
         for (const scope of scopes) {
-          if (hasta === null) delete acceso[scope];
-          else acceso[scope] = hasta;
+          acceso[scope] = hasta;
         }
 
         await client.users.updateUserMetadata(userId, {
