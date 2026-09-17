@@ -352,7 +352,7 @@ export function AdminUserTable() {
                           hasta {formatFecha(u.acceso[s.scope] ?? null)}
                         </span>
                       ) : (
-                        <span className="text-text-soft opacity-60">sin acceso</span>
+                        <span className="text-text-soft opacity-40">—</span>
                       )}
                     </td>
                   ))}
