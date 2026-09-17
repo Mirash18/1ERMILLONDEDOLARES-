@@ -604,6 +604,30 @@ de Trading — la portada y `/introduccion` quedan igual que antes.
   (`showWatchlist` en `CandleChart.tsx`), para no restarle espacio al
   gráfico cuando nadie lo está usando.
 
+## Bug real: la PM/MA de 200 nunca se dibujaba (17 sept. 2026)
+
+`/api/candles` pedía solo 180 velas (`outputsize`), pero una media móvil de
+200 períodos necesita 200 cierres solo para calcular su primer punto — con
+180 velas, `sma200` quedaba siempre lleno de `null` y la línea morada nunca
+aparecía en el gráfico. Nadie lo había notado porque las otras tres (20, 40,
+100) sí tenían de sobra.
+
+**Corregido:** `outputsize` subió a 300 (`src/app/api/candles/route.ts`,
+default en `getCandles()`) — sin costo extra de créditos, Twelve Data cobra
+por llamada, no por vela. Con 300 velas, la PM 200 tiene unas 100 de
+holgura para dibujarse.
+
+**Ojo:** como la caché de Redis no distingue por `outputsize`, un
+símbolo/marco que ya estuviera cacheado de antes de este cambio (con solo
+180 velas) puede tardar hasta que venza su caché (5 min en sesión regular,
+hasta 12h con el mercado cerrado) en mostrar la PM 200 — no hace falta
+hacer nada, se resuelve solo.
+
+También se renombraron las etiquetas de "MA" a **"PM"** (Promedio Móvil,
+que es como se le dice en español) en el gráfico y en `/introduccion` — el
+código interno (`sma20`, `sma40`, etc.) se quedó igual, solo cambió lo que
+se ve.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

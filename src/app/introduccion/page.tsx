@@ -24,7 +24,7 @@ const modulos = [
   {
     numero: "03",
     titulo: "Medias móviles",
-    resumen: "Para qué sirven la MA20, MA40, MA100 y MA200 que ya ves en el gráfico.",
+    resumen: "Para qué sirven la PM 20, PM 40, PM 100 y PM 200 que ya ves en el gráfico.",
   },
   {
     numero: "04",

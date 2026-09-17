@@ -30,10 +30,10 @@ const TIMEFRAMES = [
 type TimeframeKey = (typeof TIMEFRAMES)[number]["key"];
 
 const MA_LINES = [
-  { key: "sma20" as const, label: "MA 20", color: "#EAB308" },
-  { key: "sma40" as const, label: "MA 40", color: "#F23645" },
-  { key: "sma100" as const, label: "MA 100", color: "#089981" },
-  { key: "sma200" as const, label: "MA 200", color: "#A855F7" },
+  { key: "sma20" as const, label: "PM 20", color: "#EAB308" },
+  { key: "sma40" as const, label: "PM 40", color: "#F23645" },
+  { key: "sma100" as const, label: "PM 100", color: "#089981" },
+  { key: "sma200" as const, label: "PM 200", color: "#A855F7" },
 ];
 
 const BOLLINGER_COLOR = "#60A5FA";

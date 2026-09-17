@@ -161,7 +161,7 @@ export type CandleSeries = {
   candles: Candle[];
   // Medias móviles simples, alineadas 1 a 1 con `candles` (null donde no hay
   // suficiente historia todavía). Mismas que se usan en la comunidad:
-  // MA20 (amarilla), MA40 (roja), MA100 (verde), MA200 (morada).
+  // PM 20 (amarilla), PM 40 (roja), PM 100 (verde), PM 200 (morada).
   sma20: (number | null)[];
   sma40: (number | null)[];
   sma100: (number | null)[];
@@ -292,7 +292,7 @@ function aggregateToClockHour(candles: Candle[]): Candle[] {
 export async function getCandles(
   symbol: string,
   interval: string = "1day",
-  outputsize: number = 180,
+  outputsize: number = 300,
   // `fresh` salta el caché del servidor. Se usa solo en el instante en que
   // cambia la hora, para que la vela nueva aparezca al momento en vez de
   // esperar a que expire el caché. Cuesta un crédito por cambio de hora.
@@ -318,8 +318,12 @@ export async function getCandles(
   // velas del día ya no cambian — se sirven desde acá, sin gastar más
   // créditos, hasta que abra de nuevo. `fresh` la salta a propósito (se usa
   // justo al cruzar el cambio de hora, para no quedarse con la vela vieja).
-  // Asume que `outputsize` es siempre 180 (el único valor que pide el
-  // proyecto hoy) — si algún día varía, hay que meterlo en la llave.
+  // Asume que `outputsize` es siempre 300 (el único valor que pide el
+  // proyecto hoy — antes era 180, muy poco para que la MA/PM de 200
+  // períodos tuviera con qué calcularse: hacían falta 200 velas solo para
+  // el primer punto, así que la línea nunca llegaba a dibujarse. 300 le da
+  // holgura para varias decenas de puntos visibles) — si algún día varía,
+  // hay que meterlo en la llave.
   const cacheKey = `candles:${symbol}:${interval}`;
   const session = nyMarketSession();
   // Se trae aunque sea `fresh` — no para servirla de una (eso lo salta
