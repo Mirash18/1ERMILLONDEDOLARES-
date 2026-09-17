@@ -846,6 +846,39 @@ que el panel ya estuviera desplegado. Los siguientes correos (los
 estudiantes de Miguel Cortés) se agregan uno por uno desde `/admin` ya con
 esto en producción.
 
+## Bug real: ADMIN_EMAILS vacía en producción (17 sept. 2026)
+
+Alejo no veía la tabla de usuarios en `/admin` con ninguna de sus dos
+cuentas. La variable `ADMIN_EMAILS` en Vercel (Producción) estaba guardada
+como tipo "Secret" — cosa que la vuelve invisible incluso para editarla
+desde el dashboard ("Separate Production Secret Values") — y en algún
+punto quedó vacía, probablemente desde que se creó por primera vez. Con
+`ADMIN_EMAILS` vacío, `isAdmin()` responde `false` para cualquier correo,
+así que ni Alejo podía entrar.
+
+Arreglado: se volvió a guardar con `alejo012g@gmail.com` y se redesplegó
+(las variables de entorno no se actualizan solas — hace falta un nuevo
+deploy para que una función ya construida las vuelva a leer). Queda
+pendiente considerar guardar variables así (que no son secretas, solo
+listas de configuración) como tipo "Config" en vez de "Secret", para poder
+verificarlas sin tener que adivinar por qué algo no funciona.
+
+## Banear cuentas (17 sept. 2026)
+
+Decisión de Alejo: algunas cuentas retransmiten o comparten el contenido
+pagado con gente que no pagó. Además de poder quitarles el acceso a una
+sección puntual, quiere poder bloquearles la cuenta por completo.
+
+`/api/admin/ban` usa el bloqueo nativo de Clerk (`banUser`/`unbanUser`):
+una cuenta baneada no puede volver a iniciar sesión con ese correo bajo
+ningún concepto (Clerk le cierra las sesiones activas y rechaza cualquier
+intento de entrar) — para volver a usar el sitio necesitaría registrarse
+con un correo distinto. Es más fuerte que "quitar acceso" (que solo cierra
+una sección, la cuenta sigue sirviendo para entrar) y por eso vive como un
+botón aparte en `/admin`, con confirmación antes de aplicarse. Un admin no
+se puede banear a sí mismo por accidente (se quedaría sin forma de entrar
+a deshacerlo).
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

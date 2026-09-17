@@ -8,6 +8,7 @@ export type AdminUserRow = {
   email: string | null;
   createdAt: number;
   acceso: Partial<Record<Scope, string>>;
+  banned: boolean;
 };
 
 export async function GET(request: Request) {
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
     acceso:
       (u.publicMetadata?.acceso as Partial<Record<Scope, string>> | undefined) ??
       {},
+    banned: Boolean(u.banned),
   }));
 
   return NextResponse.json({ users: rows, totalCount });

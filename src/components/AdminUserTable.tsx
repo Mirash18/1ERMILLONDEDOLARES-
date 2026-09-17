@@ -111,6 +111,48 @@ export function AdminUserTable() {
     }
   }
 
+  // Banear es más serio que quitar acceso: cierra la cuenta de Clerk por
+  // completo (ni siquiera puede iniciar sesión, sin importar la sección) —
+  // pensado para cuentas que retransmiten o comparten el contenido pagado.
+  // Por eso pide confirmación aparte, a diferencia de los botones de
+  // acceso.
+  async function aplicarBan(banned: boolean) {
+    if (selected.size === 0) return;
+    if (
+      banned &&
+      !window.confirm(
+        `¿Banear ${selected.size} cuenta(s)? No van a poder volver a iniciar sesión con ese correo.`
+      )
+    ) {
+      return;
+    }
+    setWorking(true);
+    setMensaje(null);
+    try {
+      const res = await fetch("/api/admin/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: Array.from(selected), banned }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setMensaje(json.error ?? "Algo falló.");
+      } else {
+        setMensaje(
+          banned
+            ? `${selected.size} cuenta(s) baneada(s) — ya no pueden iniciar sesión.`
+            : `${selected.size} cuenta(s) desbaneada(s).`
+        );
+        setSelected(new Set());
+        await load(query);
+      }
+    } catch {
+      setMensaje("No se pudo conectar con el servidor.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -170,6 +212,28 @@ export function AdminUserTable() {
         </button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-soft">
+          Cuenta:
+        </span>
+        <button
+          type="button"
+          disabled={selected.size === 0 || working}
+          onClick={() => aplicarBan(true)}
+          className="rounded bg-red px-3 py-1.5 font-mono text-[11px] font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Banear — no puede volver a entrar
+        </button>
+        <button
+          type="button"
+          disabled={selected.size === 0 || working}
+          onClick={() => aplicarBan(false)}
+          className="rounded border border-border px-3 py-1.5 font-mono text-[11px] text-text-soft transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-gold/30"
+        >
+          Quitar ban
+        </button>
+      </div>
+
       {mensaje && (
         <p className="font-mono text-[11px] text-text-soft">{mensaje}</p>
       )}
@@ -193,19 +257,20 @@ export function AdminUserTable() {
                   {s.label}
                 </th>
               ))}
+              <th className="px-3 py-2">Cuenta</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={3 + SCOPES.length} className="px-3 py-4 text-text-soft">
+                <td colSpan={4 + SCOPES.length} className="px-3 py-4 text-text-soft">
                   Cargando…
                 </td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={3 + SCOPES.length} className="px-3 py-4 text-text-soft">
+                <td colSpan={4 + SCOPES.length} className="px-3 py-4 text-text-soft">
                   Sin resultados.
                 </td>
               </tr>
@@ -236,6 +301,13 @@ export function AdminUserTable() {
                       )}
                     </td>
                   ))}
+                  <td className="px-3 py-2">
+                    {u.banned ? (
+                      <span className="text-red">baneado</span>
+                    ) : (
+                      <span className="text-text-soft opacity-60">activa</span>
+                    )}
+                  </td>
                 </tr>
               ))}
           </tbody>
