@@ -6,19 +6,24 @@ import type { Scope } from "@/lib/subscription";
 const SCOPES: Scope[] = ["introduccion", "sala"];
 
 /**
- * Da o quita acceso manual a UNA sección (`scope`) — `publicMetadata.acceso`
- * en Clerk, ver `subscription.ts` — a una lista de usuarios de una sola vez.
+ * Da o quita acceso manual a una o más secciones (`scopes`) —
+ * `publicMetadata.acceso` en Clerk, ver `subscription.ts` — a una lista de
+ * usuarios de una sola vez.
  *
- * Body: `{ userIds: string[], scope: "introduccion" | "sala", days: number
- * | null }` — `days` es cuántos días de acceso a partir de ahora (7, 14,
- * 30...); `null` quita el acceso a esa sección (borra su fecha en vez de
- * ponerla en el pasado, para no dejar basura en los metadatos).
+ * Body: `{ userIds: string[], scopes: ("introduccion" | "sala")[], days:
+ * number | null }` — `days` es cuántos días de acceso a partir de ahora (7,
+ * 14, 30...); `null` quita el acceso a esas secciones (borra su fecha en
+ * vez de ponerla en el pasado, para no dejar basura en los metadatos).
+ * Mandar varias secciones a la vez (o todas, ver "Todas" en
+ * AdminUserTable.tsx) es lo normal cuando alguien contrata todo — así no
+ * hace falta un viaje de ida y vuelta por sección.
  *
  * `publicMetadata.acceso` guarda una fecha por sección (`{ introduccion:
  * "...", sala: "..." }`). Clerk reemplaza ese objeto entero en cada
  * actualización (no hace merge profundo) — por eso aquí se lee primero el
- * usuario, se cambia solo la sección pedida, y se manda el objeto completo
- * de vuelta, para no borrar sin querer el acceso ya dado a la otra sección.
+ * usuario, se cambian solo las secciones pedidas, y se manda el objeto
+ * completo de vuelta, para no borrar sin querer el acceso ya dado a otra
+ * sección que no vino en este pedido.
  */
 export async function POST(request: Request) {
   if (!(await isAdmin())) {
@@ -29,10 +34,12 @@ export async function POST(request: Request) {
   const userIds: string[] = Array.isArray(body?.userIds)
     ? body.userIds.filter((id: unknown) => typeof id === "string")
     : [];
-  const scope: Scope | null = SCOPES.includes(body?.scope) ? body.scope : null;
+  const scopes: Scope[] = Array.isArray(body?.scopes)
+    ? body.scopes.filter((s: unknown) => SCOPES.includes(s as Scope))
+    : [];
   const days = typeof body?.days === "number" ? body.days : null;
 
-  if (userIds.length === 0 || !scope) {
+  if (userIds.length === 0 || scopes.length === 0) {
     return NextResponse.json({ error: "faltan datos" }, { status: 400 });
   }
 
@@ -51,8 +58,10 @@ export async function POST(request: Request) {
             | Partial<Record<Scope, string>>
             | undefined),
         };
-        if (hasta === null) delete acceso[scope];
-        else acceso[scope] = hasta;
+        for (const scope of scopes) {
+          if (hasta === null) delete acceso[scope];
+          else acceso[scope] = hasta;
+        }
 
         await client.users.updateUserMetadata(userId, {
           publicMetadata: { acceso },
@@ -68,5 +77,5 @@ export async function POST(request: Request) {
     })
   );
 
-  return NextResponse.json({ hasta, scope, resultados });
+  return NextResponse.json({ hasta, scopes, resultados });
 }

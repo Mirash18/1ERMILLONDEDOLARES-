@@ -33,7 +33,10 @@ export function AdminUserTable() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [scope, setScope] = useState<Scope>("introduccion");
+  // Qué secciones tocan los botones de acceso de abajo — más de una a la
+  // vez, para poder dar de alta a alguien en todo con un solo clic aunque
+  // más adelante se agreguen más secciones (ver "Todas" abajo).
+  const [scopes, setScopes] = useState<Set<Scope>>(new Set(["introduccion"]));
   const [working, setWorking] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -81,20 +84,37 @@ export function AdminUserTable() {
     });
   }
 
+  function toggleScope(s: Scope) {
+    setScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  }
+
+  const todasLasSecciones = scopes.size === SCOPES.length;
+
   // `days: null` es "Quitar acceso permanente": borra la fecha de acceso
   // de esa sección de inmediato (no espera a que venza sola) — la cuenta
   // sigue pudiendo iniciar sesión, solo pierde esa sección. Para bloquear
   // la cuenta entera, ver aplicarBan() más abajo.
   async function aplicarAcceso(days: number | null) {
-    if (selected.size === 0) return;
+    if (selected.size === 0 || scopes.size === 0) return;
     setWorking(true);
     setMensaje(null);
-    const seccion = SCOPES.find((s) => s.scope === scope)?.label ?? scope;
+    const nombresSecciones = SCOPES.filter((s) => scopes.has(s.scope))
+      .map((s) => s.label)
+      .join(" + ");
     try {
       const res = await fetch("/api/admin/access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userIds: Array.from(selected), scope, days }),
+        body: JSON.stringify({
+          userIds: Array.from(selected),
+          scopes: Array.from(scopes),
+          days,
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -102,8 +122,8 @@ export function AdminUserTable() {
       } else {
         setMensaje(
           days === null
-            ? `Acceso a ${seccion} quitado de forma permanente a ${selected.size} persona(s) — ya no cuenta ninguna fecha anterior.`
-            : `Acceso a ${seccion} dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
+            ? `Acceso a ${nombresSecciones} quitado de forma permanente a ${selected.size} persona(s) — ya no cuenta ninguna fecha anterior.`
+            : `Acceso a ${nombresSecciones} dado a ${selected.size} persona(s) hasta el ${formatFecha(json.hasta)}.`
         );
         setSelected(new Set());
         await load(query);
@@ -187,13 +207,30 @@ export function AdminUserTable() {
         <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-soft">
           Sección:
         </span>
+        <button
+          type="button"
+          onClick={() =>
+            setScopes(
+              todasLasSecciones
+                ? new Set()
+                : new Set(SCOPES.map((s) => s.scope))
+            )
+          }
+          className={`rounded border px-3 py-1.5 font-mono text-[11px] font-medium transition-colors ${
+            todasLasSecciones
+              ? "border-gold/50 bg-gold/10 text-gold"
+              : "border-border text-text-soft hover:border-gold/30"
+          }`}
+        >
+          Todas
+        </button>
         {SCOPES.map((s) => (
           <button
             key={s.scope}
             type="button"
-            onClick={() => setScope(s.scope)}
+            onClick={() => toggleScope(s.scope)}
             className={`rounded border px-3 py-1.5 font-mono text-[11px] transition-colors ${
-              scope === s.scope
+              scopes.has(s.scope)
                 ? "border-gold/50 bg-gold/10 text-gold"
                 : "border-border text-text-soft hover:border-gold/30"
             }`}
@@ -208,7 +245,7 @@ export function AdminUserTable() {
           <button
             key={d.days}
             type="button"
-            disabled={selected.size === 0 || working}
+            disabled={selected.size === 0 || scopes.size === 0 || working}
             onClick={() => aplicarAcceso(d.days)}
             className="rounded bg-gold px-3 py-1.5 font-mono text-[11px] font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -217,7 +254,7 @@ export function AdminUserTable() {
         ))}
         <button
           type="button"
-          disabled={selected.size === 0 || working}
+          disabled={selected.size === 0 || scopes.size === 0 || working}
           onClick={() => aplicarAcceso(null)}
           className="rounded border border-red/40 px-3 py-1.5 font-mono text-[11px] text-red transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
