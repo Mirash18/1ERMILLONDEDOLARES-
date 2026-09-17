@@ -653,6 +653,54 @@ en vez de uno solo (`DIAS_VISIBLES_HORA` en `CandleChart.tsx`) — bastantes
 más velas visibles, sigue siendo un tramo corto y legible. El marcador de
 "apertura" se sigue calculando solo sobre el día actual, eso no cambió.
 
+## Plan de Twelve Data: investigado a fondo (17 sept. 2026)
+
+Alejo preguntó si "con la suscripción" (de pago) esto de los errores por
+créditos se acaba. Se investigaron los planes reales de Twelve Data:
+
+| Plan | Precio | Quita el límite de 800/día | Permite mostrar datos al público |
+|---|---|---|---|
+| Basic (actual) | Gratis | No | No — "uso interno" |
+| Grow | $29/mes | Sí | **No** — sigue siendo "uso interno" |
+| Pro | $99/mes | Sí | **No** — sigue siendo "uso interno" |
+| **Venture** (negocio) | **$499/mes** ($4,990/año) | Sí | **Sí** — "external display data access" |
+
+Ningún plan individual (Basic/Grow/Pro/Ultra) da permiso de mostrarle datos
+reales a visitantes del público — sus términos lo prohíben explícitamente
+("do not permit commercial display of data to third parties"). Ese permiso
+solo lo da el plan de **negocio Venture, $499/mes**. Fuente: soporte de
+Twelve Data ("Commercial and personal usage") y `twelvedata.com/pricing-business`.
+
+**Decisión de Alejo:** esperar a Venture cuando el proyecto esté listo para
+lanzar en serio con suscriptores pagando de verdad — no subir a Grow/Pro
+mientras tanto (esos planes cuestan dinero y técnicamente seguirían sin dar
+el permiso que hace falta). Mientras tanto, el proyecto sigue en el plan
+gratuito, con el paliativo de abajo para el universo gratuito.
+
+## Cron diario: calentar la caché antes de que abra el mercado (17 sept. 2026)
+
+Alejo notó que a primera hora de la mañana la página tarda en cargar — la
+primera visita del día es la que, sin saberlo, dispara el pedido "en frío"
+a Twelve Data. Propuso traer y guardar todos los indicadores de todas las
+acciones cada mañana antes de las 7:30 — buena idea, pero **inviable para
+las 500+ acciones del universo pagado** con el límite de 800 créditos/día:
+ese solo trabajo gastaría casi el día completo de un jalón.
+
+**Lo que sí se hizo:** `src/app/api/cron/warm-free-symbols` — un cron de
+Vercel (`vercel.json`) que cada día hábil calienta la caché de Redis del
+**universo gratuito únicamente** (SPY/META/GLD: cotizaciones + velas en
+Hora/Día/Semana/Mes). Corre a las 6am Colombia (11:00 UTC) entre semana —
+con margen de sobra para terminar antes de las 7:30 que pidió Alejo, dado
+que en el plan Hobby de Vercel un cron diario se dispara en algún punto de
+la hora indicada, no al minuto exacto.
+
+Protegido con `CRON_SECRET` (Vercel lo manda solo como
+`Authorization: Bearer <valor>` en cada invocación programada) para que
+nadie más pueda llamar la ruta y gastar créditos a propósito.
+
+**El universo pagado se queda sin calentar** hasta que se suba a un plan
+que lo permita económicamente — es la misma limitación de arriba.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
