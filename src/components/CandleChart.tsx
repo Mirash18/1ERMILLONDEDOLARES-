@@ -924,13 +924,23 @@ export function CandleChart({
         },
       ]);
 
-      // El marco "Hora" siempre arranca centrado en la sesión más reciente
-      // (el día en curso, o el último día hábil si el mercado está cerrado)
-      // en vez de mostrar los 180 días de historia que se piden de fondo
-      // para las medias móviles — a nadie le sirve ver seis meses de velas
-      // horarias amontonadas.
+      // El marco "Hora" arranca centrado en lo reciente — pero no SOLO en
+      // el día en curso: con el mercado recién abierto eso eran apenas 6-7
+      // velas, demasiado apretado (Alejo pidió alejar el zoom para ver más
+      // contexto). Se muestran los últimos 3 días hábiles completos en vez
+      // de uno solo — bastantes más velas, sin llegar a los 300 que se
+      // piden de fondo para las PM.
+      const DIAS_VISIBLES_HORA = 3;
+      const diasUnicos = Array.from(
+        new Set(data.candles.map((c) => Math.floor(c.time / 86400)))
+      ).sort((a, b) => a - b);
+      const diaDesde = diasUnicos[Math.max(0, diasUnicos.length - DIAS_VISIBLES_HORA)];
+      const primeraVisible = data.candles.find(
+        (c) => Math.floor(c.time / 86400) >= diaDesde
+      );
+
       chartRef.current?.timeScale().setVisibleRange({
-        from: apertura.time as unknown as UTCTimestamp,
+        from: (primeraVisible ?? apertura).time as unknown as UTCTimestamp,
         to: (ultima.time + 3600) as unknown as UTCTimestamp,
       });
     } else {

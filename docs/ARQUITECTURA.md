@@ -642,6 +642,17 @@ quedan al doble de grandes y el gráfico ya arranca centrado en el valor de
 hoy, sin que nadie tenga que moverse para llegar ahí. El marco "Hora" ya
 hacía algo parecido (centrado en la sesión del día) y se quedó igual.
 
+## Marco "Hora": alejar el zoom para ver más contexto (17 sept. 2026)
+
+El marco "Hora" mostraba SOLO el día en curso — con el mercado recién
+abierto eso eran apenas 6-7 velas, demasiado apretado. Alejo pidió alejar
+el zoom para ver más historia sin llegar a las 300 velas completas.
+
+**Corregido:** ahora se muestran los últimos **3 días hábiles** completos
+en vez de uno solo (`DIAS_VISIBLES_HORA` en `CandleChart.tsx`) — bastantes
+más velas visibles, sigue siendo un tramo corto y legible. El marcador de
+"apertura" se sigue calculando solo sobre el día actual, eso no cambió.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
