@@ -1015,6 +1015,32 @@ Ya en producción, completando casi toda la lista de la sección anterior:
   primitives (dibujar rectángulos de fondo por rango de tiempo), pero
   todavía no se ha hecho.
 
+## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
+
+El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit
+`cd18d2a`), pero por primera vez en toda la sesión Vercel **no lo detectó
+solo** — el dashboard se quedó mostrando el despliegue anterior como si
+nada nuevo hubiera llegado. La integración Git seguía conectada
+normalmente (`/settings/git`), así que no fue un problema de configuración.
+
+Se creó un **Deploy Hook** (`/settings/git` → "Deploy Hooks", rama `main`,
+nombre `manual-redeploy`) — una URL que, al recibir un POST, le pide a
+Vercel que despliegue esa rama sin depender del webhook de GitHub. Se dejó
+guardado a propósito como respaldo (no expone nada sensible, solo dispara
+un build). Si un push no aparece en Vercel después de un par de minutos,
+usar ese hook en vez de esperar o reintentar el push.
+
+Ojo con un detalle: el primer disparo del hook se quedó atascado en
+"Initializing" varios minutos sin arrancar el build — se canceló y se
+volvió a disparar, y ese segundo intento sí construyó normal en ~20s.
+Además, un despliegue creado por Deploy Hook puede quedar marcado
+**"Staged"** con "Assigning Custom Domains: Skipped" — es decir, se
+construye bien pero **no queda apuntado al dominio de producción solo**.
+Hay que entrar al despliegue y usar el menú "···" → **Promote** a mano
+para que el dominio real (`1-ermillondedolares-in8t.vercel.app`) empiece a
+servirlo — si no, el sitio real sigue mostrando la versión anterior aunque
+el despliegue diga "Ready".
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
