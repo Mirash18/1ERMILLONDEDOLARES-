@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import type { Palette } from "./CandleChart";
 import type { Quote } from "@/lib/marketData";
+import { sectorOf } from "@/lib/universe";
 
 type Sector = { name: string; symbols: string[] };
+type OrdenColumna = "symbol" | "price";
 
 /**
  * Lista de seguimiento (watchlist) de la Sala de Trading — como el panel
@@ -36,6 +38,11 @@ export function Watchlist({
   const [modalOpen, setModalOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todos");
+  // Orden de la lista — clic en un encabezado ordena por esa columna; clic
+  // de nuevo en el mismo encabezado invierte la dirección, como en la
+  // watchlist de TradingView.
+  const [ordenPor, setOrdenPor] = useState<OrdenColumna>("symbol");
+  const [ordenAsc, setOrdenAsc] = useState(true);
 
   // El servidor decide (según la sesión) si hay cuenta y si tiene acceso
   // dado, y trae las categorías — el navegador nunca decide esto por su
@@ -127,6 +134,30 @@ export function Watchlist({
         : [...favorites, s]
     );
   }
+
+  function ordenarPor(columna: OrdenColumna) {
+    if (columna === ordenPor) {
+      setOrdenAsc((asc) => !asc);
+    } else {
+      setOrdenPor(columna);
+      setOrdenAsc(true);
+    }
+  }
+
+  // Sin precio todavía (`-Infinity`/`Infinity` según dirección) para que las
+  // favoritas cuya cotización no ha llegado se vayan al final en vez de
+  // aparecer primero por casualidad.
+  const favoritasOrdenadas = useMemo(() => {
+    const sinPrecio = ordenAsc ? Infinity : -Infinity;
+    return [...favorites].sort((a, b) => {
+      if (ordenPor === "symbol") {
+        return ordenAsc ? a.localeCompare(b) : b.localeCompare(a);
+      }
+      const pa = quotes[a]?.price ?? sinPrecio;
+      const pb = quotes[b]?.price ?? sinPrecio;
+      return ordenAsc ? pa - pb : pb - pa;
+    });
+  }, [favorites, quotes, ordenPor, ordenAsc]);
 
   // Todavía no se sabe si hay cuenta — no se pinta nada para no parpadear.
   if (allowed === null) {
@@ -220,13 +251,37 @@ export function Watchlist({
         </button>
       </div>
 
+      {favorites.length > 0 && (
+        <div
+          className="mb-1 flex items-center gap-1 px-2 font-mono text-[10px] uppercase tracking-wide opacity-70"
+          style={{ color: palette.textSoft }}
+        >
+          <button
+            type="button"
+            onClick={() => ordenarPor("symbol")}
+            className="flex flex-1 items-center gap-1 text-left"
+          >
+            Símbolo
+            {ordenPor === "symbol" && <span>{ordenAsc ? "▲" : "▼"}</span>}
+          </button>
+          <button
+            type="button"
+            onClick={() => ordenarPor("price")}
+            className="flex items-center gap-1"
+          >
+            Última
+            {ordenPor === "price" && <span>{ordenAsc ? "▲" : "▼"}</span>}
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         {favorites.length === 0 && (
           <p className="mt-2 font-mono text-[11px] opacity-60" style={{ color: palette.textSoft }}>
             Todavía no tienes favoritas — dale a &ldquo;+&rdquo; para agregar.
           </p>
         )}
-        {favorites.map((s) => {
+        {favoritasOrdenadas.map((s) => {
           const q = quotes[s];
           const active = s === symbol;
           return (
@@ -241,7 +296,15 @@ export function Watchlist({
                 className="flex flex-1 items-center justify-between gap-2 px-2 py-1.5 font-mono text-xs"
                 style={{ color: active ? palette.buttonActiveText : palette.buttonText }}
               >
-                <span>{s}</span>
+                <span className="flex items-center gap-1.5">
+                  {/* Bandera de color — puramente visual, como la marca de
+                      lista de colores de TradingView. */}
+                  <span
+                    className="h-2.5 w-1 shrink-0 rounded-sm"
+                    style={{ backgroundColor: active ? palette.buttonActiveText : "#D4AF37" }}
+                  />
+                  {s}
+                </span>
                 {q?.price != null ? (
                   <span className="flex items-center gap-1.5">
                     <span>{q.price.toFixed(2)}</span>
@@ -277,6 +340,44 @@ export function Watchlist({
           );
         })}
       </div>
+
+      {/* Ficha del símbolo activo del gráfico — solo con datos reales que sí
+          tenemos (símbolo, sector, precio, % del día): nada de descripción
+          de la empresa ni noticias, porque no hay una fuente de eso todavía
+          y este sitio no finge tener listo lo que no tiene. Solo aparece si
+          el símbolo activo ya está entre las favoritas (para no gastar una
+          consulta extra de Twelve Data solo por esta ficha). */}
+      {quotes[symbol] && (
+        <div
+          className="mt-2 border-t pt-2"
+          style={{ borderColor: palette.wrapperBorder }}
+        >
+          <p className="font-mono text-sm font-medium" style={{ color: palette.buttonText }}>
+            {symbol}
+          </p>
+          {sectorOf(symbol) && (
+            <p className="font-mono text-[10px] opacity-60" style={{ color: palette.textSoft }}>
+              {sectorOf(symbol)}
+            </p>
+          )}
+          {quotes[symbol].price != null && (
+            <p className="mt-1 flex items-baseline gap-2 font-mono">
+              <span className="text-lg" style={{ color: palette.buttonText }}>
+                {quotes[symbol].price!.toFixed(2)}
+              </span>
+              <span
+                className="text-xs"
+                style={{
+                  color: (quotes[symbol].change ?? 0) >= 0 ? "#089981" : "#F23645",
+                }}
+              >
+                {(quotes[symbol].change ?? 0) >= 0 ? "+" : ""}
+                {quotes[symbol].percentChange?.toFixed(2)}%
+              </span>
+            </p>
+          )}
+        </div>
+      )}
 
       {modalOpen && (
         <div

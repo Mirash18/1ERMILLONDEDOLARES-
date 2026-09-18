@@ -923,6 +923,61 @@ sección de arriba), `/admin` ahora también muestra "prueba gratis" en la
 columna de Sala de Trading cuando aplica — para que nunca quede
 escondido por qué alguien sigue entrando.
 
+## Comparación con TradingView y plan de features (18 sept. 2026)
+
+Alejo mandó un video (4:19) grabando TradingView y señalando, en orden,
+cosas que quiere en la Sala de Trading: fondos de color por sesión, un
+panel "árbol de objetos" (lista de indicadores/dibujos activos), líneas de
+tendencia / línea horizontal / tendencia de regresión / regla de medición,
+un menú clic-derecho (alerta de precio, comprar/vender simulado, agregar
+orden, dibujar línea horizontal), watchlist con columnas ordenables +
+bandera de color + ficha del símbolo, buscador con pestañas por categoría, y
+marcos de tiempo 5m/15m/30m/65m.
+
+De esas 15 cosas, dos (**alertas de precio** y **compra/venta simulada**)
+son sistemas aparte — alertas necesita vigilar el precio aunque el usuario
+no tenga el sitio abierto, compra/venta simulada necesita posiciones y
+ganancias/pérdidas, básicamente un simulador de trading dentro del
+simulador de trading. Alejo confirmó dejarlas para después (coincide con la
+decisión de las herramientas de dibujo del 15 sept.: "esto es más largo,
+debemos sentarnos un poco más") y arrancar por lo visual.
+
+Primera tanda, ya en producción:
+
+- **Marcos de tiempo 5m/15m/30m** (`CandleChart.tsx`, `/api/candles`): son
+  intervalos nativos de Twelve Data, no necesitan el reagrupado especial de
+  "1h" (`aggregateToClockHour` en `marketData.ts`). No se agregó 65m —
+  Twelve Data no lo tiene como intervalo nativo y armarlo a mano no valía
+  la complejidad para esta tanda. Toda la lógica que antes miraba
+  `timeframe === "1h"` para decidir "¿esto es intradía?" (formato del eje,
+  marcador de apertura, zoom centrado en los últimos días, refresco cada 5
+  min) ahora usa un conjunto `INTRADAY_TIMEFRAMES` que incluye los cuatro
+  marcos — excepto el refresco EXACTO al cruzar la hora (`fresh=1`), que
+  sigue siendo solo para "1h" a propósito: en marcos de minutos esos
+  cruces son mucho más frecuentes y hubiera disparado muchos más créditos
+  de Twelve Data de los que vale la pena gastar en esta fase.
+- **Watchlist** (`Watchlist.tsx`): encabezados "Símbolo" / "Última"
+  ordenables (clic invierte la dirección), una bandera de color decorativa
+  junto a cada símbolo, y una ficha del símbolo activo del gráfico debajo
+  de la lista — pero SOLO con datos reales que ya se tienen (símbolo,
+  sector vía `sectorOf()` en `universe.ts`, precio y % del día). A
+  propósito no hay descripción de empresa ni noticias como en TradingView:
+  no hay una fuente de eso todavía, y no tiene sentido fingir que sí. La
+  ficha solo aparece si el símbolo activo ya está entre las favoritas —
+  así no se gasta una consulta aparte a Twelve Data solo para mostrarla.
+- El buscador de símbolos por categorías que ya existía en el modal de
+  "Agregar símbolo" de la watchlist (por sector, ver `SECTORS` en
+  `universe.ts`) ya cubre razonablemente esta idea con los datos reales
+  que hay — no se agregaron pestañas de Forex/Futuros/Bonos/Opciones
+  porque el universo de la plataforma no tiene ese tipo de instrumentos.
+
+Pendiente de esta misma tanda (visual, sin alertas ni trading simulado):
+fondos de color por sesión, árbol de objetos, y las herramientas de dibujo
+(línea horizontal, tendencia, regla) — line horizontal es sencilla con las
+"price lines" nativas de `lightweight-charts`; tendencia y regla necesitan
+una capa de dibujo interactiva encima del gráfico (arrastrar, mostrar
+diferencia de precio/tiempo), que no trae la librería por defecto.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

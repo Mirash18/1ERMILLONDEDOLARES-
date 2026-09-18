@@ -21,6 +21,9 @@ import { Watchlist } from "./Watchlist";
 const EARNINGS_WARNING_DAYS = 21;
 
 const TIMEFRAMES = [
+  { key: "5min", label: "5m" },
+  { key: "15min", label: "15m" },
+  { key: "30min", label: "30m" },
   { key: "1h", label: "Hora" },
   { key: "1day", label: "Día" },
   { key: "1week", label: "Semana" },
@@ -28,6 +31,28 @@ const TIMEFRAMES = [
 ] as const;
 
 type TimeframeKey = (typeof TIMEFRAMES)[number]["key"];
+
+// Marcos que muestran velas dentro del mismo día de mercado — comparten toda
+// la lógica de "intradía": hora en vez de solo fecha, marcador de apertura,
+// zoom centrado en los últimos días en vez de en todo el historial cargado,
+// y refresco periódico mientras el mercado está abierto.
+const INTRADAY_TIMEFRAMES = new Set<TimeframeKey>([
+  "5min",
+  "15min",
+  "30min",
+  "1h",
+]);
+
+// Minutos de cada marco de minutos, para calcular la cuenta regresiva hasta
+// la próxima vela (ver nextCandleBoundary). Se redondea contra la medianoche
+// UTC en vez de contra la apertura del mercado (9:30 en Nueva York) — a
+// veces se corre hasta media hora de más, pero es una insignia informativa,
+// no algo de lo que dependa ningún cálculo.
+const INTRADAY_MINUTES: Partial<Record<TimeframeKey, number>> = {
+  "5min": 5,
+  "15min": 15,
+  "30min": 30,
+};
 
 const MA_LINES = [
   { key: "sma20" as const, label: "PM 20", color: "#EAB308" },
@@ -110,6 +135,11 @@ function toLinePoints(
 // arranca la siguiente, según el marco de tiempo elegido.
 function nextCandleBoundary(nowSeconds: number, timeframe: TimeframeKey): number {
   const d = new Date(nowSeconds * 1000);
+  const minutes = INTRADAY_MINUTES[timeframe];
+  if (minutes) {
+    const stepSeconds = minutes * 60;
+    return (Math.floor(nowSeconds / stepSeconds) + 1) * stepSeconds;
+  }
   if (timeframe === "1h") {
     return (Math.floor(nowSeconds / 3600) + 1) * 3600;
   }
@@ -734,7 +764,7 @@ export function CandleChart({
   // Twelve Data (que además quita el límite diario) esto se puede volver a
   // bajar sin miedo.
   useEffect(() => {
-    if (timeframe !== "1h") return;
+    if (!INTRADAY_TIMEFRAMES.has(timeframe)) return;
     const id = setInterval(() => {
       loadCandles().catch(() => {});
     }, 5 * 60 * 1000);
@@ -846,7 +876,7 @@ export function CandleChart({
   // local). Debe declararse antes del efecto que pinta los datos, para que
   // el redibujado ya use el formato correcto.
   useEffect(() => {
-    const intraday = timeframe === "1h";
+    const intraday = INTRADAY_TIMEFRAMES.has(timeframe);
     chartRef.current?.applyOptions({
       timeScale: {
         tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) =>
@@ -899,7 +929,7 @@ export function CandleChart({
     // El tamaño del marcador tiene un mínimo en lightweight-charts, así que
     // por debajo de 0.3 no se ve más pequeño: por eso se reduce el número de
     // marcadores en vez de achicarlos más.
-    if (timeframe === "1h" && data.candles.length > 0) {
+    if (INTRADAY_TIMEFRAMES.has(timeframe) && data.candles.length > 0) {
       const ultima = data.candles[data.candles.length - 1];
       const diaActual = Math.floor(ultima.time / 86400);
 
@@ -924,12 +954,12 @@ export function CandleChart({
         },
       ]);
 
-      // El marco "Hora" arranca centrado en lo reciente — pero no SOLO en
-      // el día en curso: con el mercado recién abierto eso eran apenas 6-7
-      // velas, demasiado apretado (Alejo pidió alejar el zoom para ver más
-      // contexto). Se muestran los últimos 3 días hábiles completos en vez
-      // de uno solo — bastantes más velas, sin llegar a los 300 que se
-      // piden de fondo para las PM.
+      // Los marcos intradía arrancan centrados en lo reciente — pero no SOLO
+      // en el día en curso: con el mercado recién abierto eso eran apenas
+      // 6-7 velas, demasiado apretado (Alejo pidió alejar el zoom para ver
+      // más contexto). Se muestran los últimos 3 días hábiles completos (de
+      // los que haya cargados) en vez de uno solo — bastantes más velas, sin
+      // llegar a las 300 que se piden de fondo para las PM.
       const DIAS_VISIBLES_HORA = 3;
       const diasUnicos = Array.from(
         new Set(data.candles.map((c) => Math.floor(c.time / 86400)))

@@ -3,8 +3,18 @@ import { getCandles } from "@/lib/marketData";
 import { hasSymbolAccess } from "@/lib/subscription";
 import { isFreeSymbol, isPaidSymbol } from "@/lib/universe";
 
-// Marcos de tiempo que el selector del gráfico puede pedir.
-const ALLOWED_INTERVALS = new Set(["1h", "1day", "1week", "1month"]);
+// Marcos de tiempo que el selector del gráfico puede pedir. 5min/15min/30min
+// son intervalos nativos de Twelve Data (no necesitan el reagrupado especial
+// que sí hace falta para "1h" — ver aggregateToClockHour en marketData.ts).
+const ALLOWED_INTERVALS = new Set([
+  "5min",
+  "15min",
+  "30min",
+  "1h",
+  "1day",
+  "1week",
+  "1month",
+]);
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

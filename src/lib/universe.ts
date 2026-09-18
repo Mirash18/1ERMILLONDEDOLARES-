@@ -173,3 +173,11 @@ export function isFreeSymbol(symbol: string): boolean {
 export function isPaidSymbol(symbol: string): boolean {
   return PAID_SYMBOLS.includes(symbol);
 }
+
+// Sector de un símbolo, para la ficha de la Sala de Trading (ver
+// Watchlist.tsx) — `null` para lo que no tiene sector propio acá (ETFs como
+// SPY/GLD, o acciones del Nasdaq-100 que caen en "Otras del Nasdaq" solo si
+// no aparecen ya en otro sector).
+export function sectorOf(symbol: string): string | null {
+  return SECTORS.find((s) => s.symbols.includes(symbol))?.name ?? null;
+}
