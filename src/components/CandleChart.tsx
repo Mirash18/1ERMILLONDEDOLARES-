@@ -7,6 +7,7 @@ import {
   LineStyle,
   TickMarkType,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type Time,
   type UTCTimestamp,
@@ -450,6 +451,126 @@ function IndicatorsDropdown({
   );
 }
 
+// "Árbol de objetos", como en TradingView: qué hay activo en el gráfico
+// ahora mismo, en un solo lugar — las 4 PM siempre están (no se pueden
+// apagar todavía), Bollinger/Volumen reflejan el estado del menú
+// "Indicadores", y cada línea horizontal dibujada aparece con su precio y
+// un botón para borrarla.
+function ObjectsDropdown({
+  showBollinger,
+  showVolume,
+  horizontalLines,
+  onRemoveHorizontalLine,
+  palette,
+}: {
+  showBollinger: boolean;
+  showVolume: boolean;
+  horizontalLines: { id: string; price: number }[];
+  onRemoveHorizontalLine: (id: string) => void;
+  palette: Palette;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded px-3 py-1.5 font-mono text-xs transition-colors"
+        style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
+      >
+        Objetos
+        <span className="text-[9px] opacity-70">▾</span>
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full z-40 mt-1 min-w-[210px] overflow-hidden rounded border shadow-lg"
+          style={{ backgroundColor: palette.buttonBg, borderColor: palette.wrapperBorder }}
+        >
+          {MA_LINES.map((ma) => (
+            <div
+              key={ma.key}
+              className="flex items-center gap-2 px-3 py-2 font-mono text-xs"
+              style={{ color: palette.buttonText }}
+            >
+              <span
+                className="inline-block h-[2px] w-3"
+                style={{ backgroundColor: ma.color }}
+              />
+              {ma.label}
+            </div>
+          ))}
+          {showBollinger && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 font-mono text-xs"
+              style={{ color: palette.buttonText }}
+            >
+              <span
+                className="inline-block h-[2px] w-3"
+                style={{ backgroundColor: BOLLINGER_COLOR }}
+              />
+              Bollinger (20, 2σ)
+            </div>
+          )}
+          {showVolume && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 font-mono text-xs"
+              style={{ color: palette.buttonText }}
+            >
+              <span className="inline-block h-2 w-3 bg-current opacity-60" />
+              Volumen
+            </div>
+          )}
+          {horizontalLines.length === 0 ? (
+            <p
+              className="border-t px-3 py-2 font-mono text-[11px] opacity-60"
+              style={{ color: palette.textSoft, borderColor: palette.wrapperBorder }}
+            >
+              Sin líneas dibujadas
+            </p>
+          ) : (
+            horizontalLines.map((l) => (
+              <div
+                key={l.id}
+                className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
+                style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-[2px] w-3" style={{ backgroundColor: "#60A5FA" }} />
+                  Línea {l.price.toFixed(2)}
+                </span>
+                <button
+                  onClick={() => onRemoveHorizontalLine(l.id)}
+                  style={{ color: palette.textSoft }}
+                  title="Borrar esta línea"
+                  aria-label={`Borrar línea en ${l.price.toFixed(2)}`}
+                >
+                  ✕
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CandleChart({
   // Para la Sala de Trading (gráfico a pantalla completa): en vez del alto
   // fijo de 420px, el panel ocupa toda la altura que le dé su contenedor.
@@ -486,6 +607,15 @@ export function CandleChart({
   // Panel de favoritas (Sala de Trading): empieza oculto, un botón lo
   // despliega y lo vuelve a esconder — no siempre ocupando espacio.
   const [showWatchlist, setShowWatchlist] = useState(false);
+  // Líneas horizontales que se han dibujado a mano (botón "─ Línea") —
+  // solo el precio hace falta guardarlo acá, el objeto real de
+  // lightweight-charts vive en horizontalLineObjectsRef.
+  const [horizontalLines, setHorizontalLines] = useState<
+    { id: string; price: number }[]
+  >([]);
+  // Modo dibujo: mientras está activo, el próximo clic en el gráfico traza
+  // una línea horizontal en ese precio en vez de mover el cursor nada más.
+  const [drawingHorizontal, setDrawingHorizontal] = useState(false);
 
   const palette = PALETTES[theme];
 
@@ -496,6 +626,15 @@ export function CandleChart({
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Líneas horizontales dibujadas, indexadas por el mismo id que
+  // `horizontalLines` — para poder borrar la de lightweight-charts cuando
+  // se quita del estado.
+  const horizontalLineObjectsRef = useRef<Record<string, IPriceLine>>({});
+  // El clic del gráfico se suscribe una sola vez (mismo efecto que crea el
+  // gráfico), así que necesita esta copia siempre actualizada para saber si
+  // el modo dibujo está activo en el momento del clic — el mismo patrón que
+  // `dataRef` un poco más abajo.
+  const drawingHorizontalRef = useRef(false);
   // Copia siempre actualizada de `data`, para leerla desde callbacks creados
   // una sola vez (como el de resize) sin quedarse con datos viejos.
   const dataRef = useRef<CandleSeries | null>(null);
@@ -657,8 +796,23 @@ export function CandleChart({
     // para que la insignia se mantenga pegada al precio.
     chart.timeScale().subscribeVisibleLogicalRangeChange(updatePriceY);
 
+    // Modo dibujo: mientras está activo (ver botón "Línea horizontal"), el
+    // siguiente clic en el gráfico traza la línea en ese precio y sale del
+    // modo — como el clic-para-colocar de TradingView, sin necesitar
+    // arrastrar nada.
+    function onChartClick(param: { point?: { y: number } }) {
+      if (!drawingHorizontalRef.current || !param.point || !candleSeriesRef.current) {
+        return;
+      }
+      const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
+      if (price !== null) addHorizontalLine(price);
+      setDrawingHorizontal(false);
+    }
+    chart.subscribeClick(onChartClick);
+
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
+      chart.unsubscribeClick(onChartClick);
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -687,6 +841,23 @@ export function CandleChart({
   // La marca de agua muestra siempre el símbolo que se está mirando.
   useEffect(() => {
     chartRef.current?.applyOptions({ watermark: { text: symbol } });
+  }, [symbol]);
+
+  // Las líneas horizontales se dibujan a mano y no se guardan en ningún
+  // lado todavía (no hay dónde persistir dibujos por símbolo) — cambiar de
+  // símbolo las borra, para no dejar una línea de AAPL a $150 pegada
+  // encima de un gráfico de GLD que se mueve en otro rango de precio por
+  // completo.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (series) {
+      for (const line of Object.values(horizontalLineObjectsRef.current)) {
+        series.removePriceLine(line);
+      }
+    }
+    horizontalLineObjectsRef.current = {};
+    setHorizontalLines([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
   // Mostrar/ocultar volumen y Bollinger no requiere volver a pedir datos.
@@ -817,6 +988,37 @@ export function CandleChart({
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    drawingHorizontalRef.current = drawingHorizontal;
+  }, [drawingHorizontal]);
+
+  // Traza una línea horizontal nueva en `price` — usada tanto por el modo
+  // dibujo (clic en el gráfico) como por cualquier otro punto de entrada que
+  // se agregue más adelante (por ejemplo, un futuro menú de clic derecho).
+  const addHorizontalLine = useCallback((price: number) => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+    const id = `${Date.now()}-${Math.random()}`;
+    const priceLine = series.createPriceLine({
+      price,
+      color: "#60A5FA",
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      axisLabelVisible: true,
+      title: "",
+    });
+    horizontalLineObjectsRef.current[id] = priceLine;
+    setHorizontalLines((prev) => [...prev, { id, price }]);
+  }, []);
+
+  const removeHorizontalLine = useCallback((id: string) => {
+    const series = candleSeriesRef.current;
+    const priceLine = horizontalLineObjectsRef.current[id];
+    if (series && priceLine) series.removePriceLine(priceLine);
+    delete horizontalLineObjectsRef.current[id];
+    setHorizontalLines((prev) => prev.filter((l) => l.id !== id));
+  }, []);
 
   // Pre-mercado / after-hours. Se refresca UNA VEZ POR HORA a propósito: el
   // dato no necesita ir al segundo y así casi no consume créditos de la API.
@@ -1060,6 +1262,25 @@ export function CandleChart({
             onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
           />
+          <button
+            onClick={() => setDrawingHorizontal((v) => !v)}
+            className="rounded px-2.5 py-1.5 font-mono text-xs transition-colors"
+            style={{
+              backgroundColor: drawingHorizontal ? palette.buttonActiveBg : palette.buttonBg,
+              color: drawingHorizontal ? palette.buttonActiveText : palette.buttonText,
+            }}
+            title="Dibujar línea horizontal — clic en el gráfico para colocarla"
+            aria-pressed={drawingHorizontal}
+          >
+            ─ Línea
+          </button>
+          <ObjectsDropdown
+            showBollinger={showBollinger}
+            showVolume={showVolume}
+            horizontalLines={horizontalLines}
+            onRemoveHorizontalLine={removeHorizontalLine}
+            palette={palette}
+          />
           {fillHeight && (
             <button
               onClick={() => setShowWatchlist((v) => !v)}
@@ -1178,7 +1399,11 @@ export function CandleChart({
       </div>
 
       <div className={fillHeight ? "relative min-h-0 flex-1" : "relative"}>
-        <div ref={containerRef} className={fillHeight ? "h-full w-full" : "w-full"} />
+        <div
+          ref={containerRef}
+          className={fillHeight ? "h-full w-full" : "w-full"}
+          style={drawingHorizontal ? { cursor: "crosshair" } : undefined}
+        />
         {/* Cuenta regresiva hasta que cierre la vela actual y abra la
             siguiente — pegada justo debajo de la etiqueta de precio actual,
             así que sube y baja con el precio en vez de quedar fija en una
