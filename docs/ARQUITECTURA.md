@@ -978,6 +978,43 @@ fondos de color por sesión, árbol de objetos, y las herramientas de dibujo
 una capa de dibujo interactiva encima del gráfico (arrastrar, mostrar
 diferencia de precio/tiempo), que no trae la librería por defecto.
 
+## Herramientas de dibujo y árbol de objetos (18 sept. 2026, misma tanda)
+
+Ya en producción, completando casi toda la lista de la sección anterior:
+
+- **Árbol de objetos** (botón "Objetos" en `CandleChart.tsx`): lista todo lo
+  activo en el gráfico ahora mismo — las 4 PM (siempre), Bollinger/Volumen
+  (si están prendidos desde "Indicadores"), y cada dibujo hecho a mano con
+  botón para borrarlo individual.
+- **Línea horizontal**: ya estaba (tanda anterior), sin cambios.
+- **Línea de tendencia** y **regla de medición** (nuevas): `lightweight-
+  charts` v4.2.3 sí trae una capa de dibujo interactiva — la API de
+  "primitives" (`ISeriesPrimitive`, `attachPrimitive`/`detachPrimitive`),
+  solo que hay que escribir la clase que se dibuja a sí misma sobre el
+  canvas (no viene una herramienta lista de fábrica como pensé al escribir
+  la nota de arriba). `TrendLinePrimitive` y `MeasurePrimitive` en
+  `CandleChart.tsx` hacen justo eso: convierten sus puntos (tiempo, precio)
+  a coordenadas de pantalla con `chart.timeScale().timeToCoordinate()` /
+  `series.priceToCoordinate()`, y se trazan con el `CanvasRenderingContext2D`
+  normal a través de `target.useMediaCoordinateSpace()` (de la librería
+  `fancy-canvas`, dependencia transitiva de lightweight-charts — se agregó
+  como dependencia directa en `package.json` porque ahora se importa su tipo
+  a mano). Interacción: un menú "Dibujar" elige la herramienta activa
+  (ninguna es el estado normal); horizontal necesita un clic, tendencia y
+  regla necesitan dos (el primero se guarda en `pendingPointRef` mientras
+  se espera el segundo). Ningún dibujo se guarda en ningún lado todavía —
+  cambiar de símbolo los borra todos, para no dejar, por ejemplo, una línea
+  de AAPL a $150 pegada sobre un gráfico de GLD en otro rango de precio.
+- **Tendencia de regresión** (canal de regresión estadística) sigue
+  pendiente — necesita calcular una regresión lineal sobre el rango
+  elegido y dibujar la línea central más las bandas de desviación, encima
+  de la misma infraestructura de primitives ya montada; es más cálculo que
+  las otras dos, no más infraestructura nueva.
+- **Fondos de color por sesión** también sigue pendiente — technically
+  posible con `paneViews()`/`zOrder: "bottom"` de la misma API de
+  primitives (dibujar rectángulos de fondo por rango de tiempo), pero
+  todavía no se ha hecho.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

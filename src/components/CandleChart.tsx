@@ -9,9 +9,13 @@ import {
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
+  type ISeriesPrimitive,
+  type ISeriesPrimitivePaneRenderer,
+  type ISeriesPrimitivePaneView,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import type { CandleSeries, ExtendedQuote } from "@/lib/marketData";
 import type { EarningsInfo } from "@/lib/earnings";
 import { FREE_SYMBOLS } from "@/lib/universe";
@@ -120,6 +124,127 @@ const PALETTES: Record<Theme, Palette> = {
     badgeBg: "rgba(255,255,255,0.9)",
   },
 };
+
+// ---------------------------------------------------------------------------
+// Dibujos sobre el gráfico (tendencia, regla de medición)
+//
+// `lightweight-charts` no trae herramientas de dibujo de fábrica — solo deja
+// "adjuntarle" objetos propios a una serie (API de "primitives") que se
+// encargan de dibujarse a mano sobre el canvas en cada repintado. Estas dos
+// clases son justo eso: cada una sabe convertir sus puntos (tiempo, precio) a
+// coordenadas de pantalla y trazarse con el context 2D normal — el resto
+// (cuándo crearlas, dónde guardarlas, cómo se borran) vive en CandleChart de
+// abajo.
+// ---------------------------------------------------------------------------
+
+type DrawPoint = { time: UTCTimestamp; price: number };
+
+// Línea diagonal entre dos puntos — como la "Tendencia" de TradingView, sin
+// mangos para arrastrarla después de trazada (se borra y se vuelve a hacer).
+class TrendLinePrimitive implements ISeriesPrimitive<Time> {
+  constructor(
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    public p1: DrawPoint,
+    public p2: DrawPoint,
+    private color: string = "#F5A623"
+  ) {}
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const { chart, series, p1, p2, color } = this;
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw(target: CanvasRenderingTarget2D) {
+              const x1 = chart.timeScale().timeToCoordinate(p1.time as unknown as Time);
+              const y1 = series.priceToCoordinate(p1.price);
+              const x2 = chart.timeScale().timeToCoordinate(p2.time as unknown as Time);
+              const y2 = series.priceToCoordinate(p2.price);
+              if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+              target.useMediaCoordinateSpace(({ context }) => {
+                context.save();
+                context.strokeStyle = color;
+                context.lineWidth = 2;
+                context.beginPath();
+                context.moveTo(x1, y1);
+                context.lineTo(x2, y2);
+                context.stroke();
+                context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
+
+// Regla de medición — un rectángulo semitransparente entre dos puntos, con
+// una etiqueta mostrando la diferencia de precio, el % y cuántas velas hay de
+// por medio. Igual que la "regla" de TradingView, pero queda dibujada hasta
+// que se borre a mano desde "Objetos" (acá no hay modo "mostrar solo
+// mientras se arrastra").
+class MeasurePrimitive implements ISeriesPrimitive<Time> {
+  constructor(
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    public p1: DrawPoint,
+    public p2: DrawPoint,
+    private barsBetween: number
+  ) {}
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const { chart, series, p1, p2, barsBetween } = this;
+    const subiendo = p2.price >= p1.price;
+    const color = subiendo ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
+    const fondo = subiendo ? "rgba(8,153,129,0.15)" : "rgba(242,54,69,0.15)";
+
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw(target: CanvasRenderingTarget2D) {
+              const x1 = chart.timeScale().timeToCoordinate(p1.time as unknown as Time);
+              const y1 = series.priceToCoordinate(p1.price);
+              const x2 = chart.timeScale().timeToCoordinate(p2.time as unknown as Time);
+              const y2 = series.priceToCoordinate(p2.price);
+              if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+
+              const diff = p2.price - p1.price;
+              const pct = p1.price !== 0 ? (diff / p1.price) * 100 : 0;
+              const etiqueta =
+                `${diff >= 0 ? "+" : ""}${diff.toFixed(2)} ` +
+                `(${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)  ${barsBetween} barras`;
+
+              target.useMediaCoordinateSpace(({ context }) => {
+                context.save();
+                const left = Math.min(x1, x2);
+                const right = Math.max(x1, x2);
+                const top = Math.min(y1, y2);
+                const bottom = Math.max(y1, y2);
+
+                context.fillStyle = fondo;
+                context.fillRect(left, top, right - left, bottom - top);
+                context.strokeStyle = color;
+                context.lineWidth = 1;
+                context.strokeRect(left, top, right - left, bottom - top);
+
+                context.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
+                const textWidth = context.measureText(etiqueta).width;
+                const labelX = Math.min(Math.max(left, 4), right - textWidth - 8);
+                const labelY = top > 16 ? top - 6 : bottom + 16;
+                context.fillStyle = subiendo ? "#089981" : "#F23645";
+                context.fillText(etiqueta, labelX + 4, labelY);
+                context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
 
 function toLinePoints(
   candles: CandleSeries["candles"],
@@ -456,17 +581,105 @@ function IndicatorsDropdown({
 // apagar todavía), Bollinger/Volumen reflejan el estado del menú
 // "Indicadores", y cada línea horizontal dibujada aparece con su precio y
 // un botón para borrarla.
+// Menú de herramientas de dibujo — una sola activa a la vez (elegir otra, o
+// la misma de nuevo, apaga la anterior). El botón se queda resaltado
+// mientras la herramienta sigue activa esperando el clic (o los dos clics,
+// para tendencia/regla) que la va a dibujar.
+const DRAW_TOOLS = [
+  { key: "horizontal" as const, label: "Horizontal", hint: "Un clic marca el precio" },
+  { key: "trend" as const, label: "Tendencia", hint: "Dos clics: inicio y fin" },
+  { key: "measure" as const, label: "Regla", hint: "Dos clics: mide precio y barras" },
+];
+
+function DrawToolsDropdown({
+  drawTool,
+  onSelect,
+  palette,
+}: {
+  drawTool: "none" | "horizontal" | "trend" | "measure";
+  onSelect: (tool: "horizontal" | "trend" | "measure") => void;
+  palette: Palette;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  const activo = DRAW_TOOLS.find((t) => t.key === drawTool);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded px-3 py-1.5 font-mono text-xs transition-colors"
+        style={{
+          backgroundColor: activo ? palette.buttonActiveBg : palette.buttonBg,
+          color: activo ? palette.buttonActiveText : palette.buttonText,
+        }}
+      >
+        {activo ? activo.label : "Dibujar"}
+        <span className="text-[9px] opacity-70">▾</span>
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full z-40 mt-1 min-w-[220px] overflow-hidden rounded border shadow-lg"
+          style={{ backgroundColor: palette.buttonBg, borderColor: palette.wrapperBorder }}
+        >
+          {DRAW_TOOLS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => {
+                onSelect(t.key);
+                setOpen(false);
+              }}
+              className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left font-mono text-xs transition-colors"
+              style={{
+                backgroundColor: drawTool === t.key ? palette.buttonActiveBg : "transparent",
+                color: drawTool === t.key ? palette.buttonActiveText : palette.buttonText,
+              }}
+            >
+              <span>{t.label}</span>
+              <span className="text-[10px] opacity-70">{t.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ObjectsDropdown({
   showBollinger,
   showVolume,
   horizontalLines,
   onRemoveHorizontalLine,
+  trendLines,
+  onRemoveTrendLine,
+  measureLines,
+  onRemoveMeasureLine,
   palette,
 }: {
   showBollinger: boolean;
   showVolume: boolean;
   horizontalLines: { id: string; price: number }[];
   onRemoveHorizontalLine: (id: string) => void;
+  trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
+  onRemoveTrendLine: (id: string) => void;
+  measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
+  onRemoveMeasureLine: (id: string) => void;
   palette: Palette;
 }) {
   const [open, setOpen] = useState(false);
@@ -536,34 +749,86 @@ function ObjectsDropdown({
               Volumen
             </div>
           )}
-          {horizontalLines.length === 0 ? (
+          {horizontalLines.length === 0 &&
+          trendLines.length === 0 &&
+          measureLines.length === 0 ? (
             <p
               className="border-t px-3 py-2 font-mono text-[11px] opacity-60"
               style={{ color: palette.textSoft, borderColor: palette.wrapperBorder }}
             >
-              Sin líneas dibujadas
+              Sin dibujos todavía
             </p>
           ) : (
-            horizontalLines.map((l) => (
-              <div
-                key={l.id}
-                className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
-                style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="inline-block h-[2px] w-3" style={{ backgroundColor: "#60A5FA" }} />
-                  Línea {l.price.toFixed(2)}
-                </span>
-                <button
-                  onClick={() => onRemoveHorizontalLine(l.id)}
-                  style={{ color: palette.textSoft }}
-                  title="Borrar esta línea"
-                  aria-label={`Borrar línea en ${l.price.toFixed(2)}`}
+            <>
+              {horizontalLines.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
+                  style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
                 >
-                  ✕
-                </button>
-              </div>
-            ))
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-[2px] w-3" style={{ backgroundColor: "#60A5FA" }} />
+                    Línea {l.price.toFixed(2)}
+                  </span>
+                  <button
+                    onClick={() => onRemoveHorizontalLine(l.id)}
+                    style={{ color: palette.textSoft }}
+                    title="Borrar esta línea"
+                    aria-label={`Borrar línea en ${l.price.toFixed(2)}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {trendLines.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
+                  style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-[2px] w-3" style={{ backgroundColor: "#F5A623" }} />
+                    Tendencia {l.p1.price.toFixed(2)} → {l.p2.price.toFixed(2)}
+                  </span>
+                  <button
+                    onClick={() => onRemoveTrendLine(l.id)}
+                    style={{ color: palette.textSoft }}
+                    title="Borrar esta tendencia"
+                    aria-label="Borrar esta tendencia"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {measureLines.map((l) => {
+                const diff = l.p2.price - l.p1.price;
+                const pct = l.p1.price !== 0 ? (diff / l.p1.price) * 100 : 0;
+                return (
+                  <div
+                    key={l.id}
+                    className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
+                    style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-2.5 w-3"
+                        style={{ backgroundColor: diff >= 0 ? "rgba(8,153,129,0.5)" : "rgba(242,54,69,0.5)" }}
+                      />
+                      Regla {pct >= 0 ? "+" : ""}
+                      {pct.toFixed(2)}% · {l.bars}b
+                    </span>
+                    <button
+                      onClick={() => onRemoveMeasureLine(l.id)}
+                      style={{ color: palette.textSoft }}
+                      title="Borrar esta regla"
+                      aria-label="Borrar esta regla"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       )}
@@ -607,15 +872,26 @@ export function CandleChart({
   // Panel de favoritas (Sala de Trading): empieza oculto, un botón lo
   // despliega y lo vuelve a esconder — no siempre ocupando espacio.
   const [showWatchlist, setShowWatchlist] = useState(false);
-  // Líneas horizontales que se han dibujado a mano (botón "─ Línea") —
-  // solo el precio hace falta guardarlo acá, el objeto real de
-  // lightweight-charts vive en horizontalLineObjectsRef.
+  // Líneas horizontales que se han dibujado a mano — solo el precio hace
+  // falta guardarlo acá, el objeto real de lightweight-charts vive en
+  // horizontalLineObjectsRef.
   const [horizontalLines, setHorizontalLines] = useState<
     { id: string; price: number }[]
   >([]);
-  // Modo dibujo: mientras está activo, el próximo clic en el gráfico traza
-  // una línea horizontal en ese precio en vez de mover el cursor nada más.
-  const [drawingHorizontal, setDrawingHorizontal] = useState(false);
+  // Líneas de tendencia y mediciones — necesitan dos clics (ver
+  // pendingPointRef más abajo), por eso guardan los dos puntos.
+  const [trendLines, setTrendLines] = useState<
+    { id: string; p1: DrawPoint; p2: DrawPoint }[]
+  >([]);
+  const [measureLines, setMeasureLines] = useState<
+    { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
+  >([]);
+  // Qué herramienta de dibujo está activa — "none" es el estado normal
+  // (clics solo mueven el cursor). Con una herramienta activa, el próximo
+  // clic (o los próximos dos, para tendencia/regla) dibuja en vez de nada.
+  const [drawTool, setDrawTool] = useState<"none" | "horizontal" | "trend" | "measure">(
+    "none"
+  );
 
   const palette = PALETTES[theme];
 
@@ -626,15 +902,19 @@ export function CandleChart({
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
-  // Líneas horizontales dibujadas, indexadas por el mismo id que
-  // `horizontalLines` — para poder borrar la de lightweight-charts cuando
-  // se quita del estado.
+  // Objetos dibujados, indexados por el mismo id que su estado (arriba) —
+  // para poder desprenderlos de lightweight-charts cuando se borran.
   const horizontalLineObjectsRef = useRef<Record<string, IPriceLine>>({});
+  const trendLineObjectsRef = useRef<Record<string, TrendLinePrimitive>>({});
+  const measureObjectsRef = useRef<Record<string, MeasurePrimitive>>({});
   // El clic del gráfico se suscribe una sola vez (mismo efecto que crea el
-  // gráfico), así que necesita esta copia siempre actualizada para saber si
-  // el modo dibujo está activo en el momento del clic — el mismo patrón que
+  // gráfico), así que necesita esta copia siempre actualizada para saber qué
+  // herramienta está activa en el momento del clic — el mismo patrón que
   // `dataRef` un poco más abajo.
-  const drawingHorizontalRef = useRef(false);
+  const drawToolRef = useRef<typeof drawTool>("none");
+  // Primer punto de una línea de tendencia o una regla, mientras se espera
+  // el segundo clic — `null` cuando no hay uno pendiente.
+  const pendingPointRef = useRef<DrawPoint | null>(null);
   // Copia siempre actualizada de `data`, para leerla desde callbacks creados
   // una sola vez (como el de resize) sin quedarse con datos viejos.
   const dataRef = useRef<CandleSeries | null>(null);
@@ -796,17 +1076,45 @@ export function CandleChart({
     // para que la insignia se mantenga pegada al precio.
     chart.timeScale().subscribeVisibleLogicalRangeChange(updatePriceY);
 
-    // Modo dibujo: mientras está activo (ver botón "Línea horizontal"), el
-    // siguiente clic en el gráfico traza la línea en ese precio y sale del
-    // modo — como el clic-para-colocar de TradingView, sin necesitar
-    // arrastrar nada.
-    function onChartClick(param: { point?: { y: number } }) {
-      if (!drawingHorizontalRef.current || !param.point || !candleSeriesRef.current) {
+    // Modo dibujo: mientras hay una herramienta activa (ver los botones
+    // "Horizontal"/"Tendencia"/"Regla"), el clic dibuja en vez de solo mover
+    // el cursor — como el clic-para-colocar de TradingView, sin necesitar
+    // arrastrar nada. Tendencia y Regla necesitan dos clics: el primero solo
+    // guarda el punto de partida en `pendingPointRef`.
+    function onChartClick(param: {
+      point?: { x: number; y: number };
+      time?: Time;
+    }) {
+      const tool = drawToolRef.current;
+      const series = candleSeriesRef.current;
+      const chartApi = chartRef.current;
+      if (tool === "none" || !param.point || !series || !chartApi) return;
+
+      const price = series.coordinateToPrice(param.point.y);
+      if (price === null) return;
+
+      if (tool === "horizontal") {
+        addHorizontalLine(price);
+        setDrawTool("none");
         return;
       }
-      const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-      if (price !== null) addHorizontalLine(price);
-      setDrawingHorizontal(false);
+
+      // Para tendencia/regla hace falta también el tiempo del clic — si no
+      // cayó justo sobre una vela, se calcula por posición en el eje.
+      const time =
+        param.time ?? chartApi.timeScale().coordinateToTime(param.point.x);
+      if (time === null || time === undefined) return;
+      const point: DrawPoint = { time: time as unknown as UTCTimestamp, price };
+
+      if (!pendingPointRef.current) {
+        pendingPointRef.current = point;
+        return;
+      }
+      const p1 = pendingPointRef.current;
+      pendingPointRef.current = null;
+      if (tool === "trend") addTrendLine(p1, point);
+      else addMeasure(p1, point);
+      setDrawTool("none");
     }
     chart.subscribeClick(onChartClick);
 
@@ -843,20 +1151,32 @@ export function CandleChart({
     chartRef.current?.applyOptions({ watermark: { text: symbol } });
   }, [symbol]);
 
-  // Las líneas horizontales se dibujan a mano y no se guardan en ningún
-  // lado todavía (no hay dónde persistir dibujos por símbolo) — cambiar de
-  // símbolo las borra, para no dejar una línea de AAPL a $150 pegada
-  // encima de un gráfico de GLD que se mueve en otro rango de precio por
-  // completo.
+  // Los dibujos (línea horizontal, tendencia, regla) se hacen a mano y no se
+  // guardan en ningún lado todavía (no hay dónde persistir dibujos por
+  // símbolo) — cambiar de símbolo los borra todos, para no dejar, por
+  // ejemplo, una línea de AAPL a $150 pegada encima de un gráfico de GLD
+  // que se mueve en otro rango de precio por completo.
   useEffect(() => {
     const series = candleSeriesRef.current;
     if (series) {
       for (const line of Object.values(horizontalLineObjectsRef.current)) {
         series.removePriceLine(line);
       }
+      for (const primitive of Object.values(trendLineObjectsRef.current)) {
+        series.detachPrimitive(primitive);
+      }
+      for (const primitive of Object.values(measureObjectsRef.current)) {
+        series.detachPrimitive(primitive);
+      }
     }
     horizontalLineObjectsRef.current = {};
+    trendLineObjectsRef.current = {};
+    measureObjectsRef.current = {};
     setHorizontalLines([]);
+    setTrendLines([]);
+    setMeasureLines([]);
+    pendingPointRef.current = null;
+    setDrawTool("none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
@@ -990,12 +1310,14 @@ export function CandleChart({
   }, [data]);
 
   useEffect(() => {
-    drawingHorizontalRef.current = drawingHorizontal;
-  }, [drawingHorizontal]);
+    drawToolRef.current = drawTool;
+    // Cambiar de herramienta (o apagarla) a mitad de una tendencia/regla
+    // descarta el primer clic ya dado — mejor eso que dibujar algo con un
+    // punto de una herramienta y otro de otra.
+    pendingPointRef.current = null;
+  }, [drawTool]);
 
-  // Traza una línea horizontal nueva en `price` — usada tanto por el modo
-  // dibujo (clic en el gráfico) como por cualquier otro punto de entrada que
-  // se agregue más adelante (por ejemplo, un futuro menú de clic derecho).
+  // Traza una línea horizontal nueva en `price`.
   const addHorizontalLine = useCallback((price: number) => {
     const series = candleSeriesRef.current;
     if (!series) return;
@@ -1018,6 +1340,50 @@ export function CandleChart({
     if (series && priceLine) series.removePriceLine(priceLine);
     delete horizontalLineObjectsRef.current[id];
     setHorizontalLines((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
+  const addTrendLine = useCallback((p1: DrawPoint, p2: DrawPoint) => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return;
+    const id = `${Date.now()}-${Math.random()}`;
+    const primitive = new TrendLinePrimitive(chart, series, p1, p2);
+    series.attachPrimitive(primitive);
+    trendLineObjectsRef.current[id] = primitive;
+    setTrendLines((prev) => [...prev, { id, p1, p2 }]);
+  }, []);
+
+  const removeTrendLine = useCallback((id: string) => {
+    const series = candleSeriesRef.current;
+    const primitive = trendLineObjectsRef.current[id];
+    if (series && primitive) series.detachPrimitive(primitive);
+    delete trendLineObjectsRef.current[id];
+    setTrendLines((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
+  // Cuántas velas hay entre los dos puntos de la regla — parte de lo que
+  // muestra la etiqueta ("0,51 (0,58%) 6 barras", igual que TradingView).
+  const addMeasure = useCallback((p1: DrawPoint, p2: DrawPoint) => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return;
+    const candles = dataRef.current?.candles ?? [];
+    const desde = Math.min(p1.time, p2.time);
+    const hasta = Math.max(p1.time, p2.time);
+    const bars = candles.filter((c) => c.time >= desde && c.time <= hasta).length;
+    const id = `${Date.now()}-${Math.random()}`;
+    const primitive = new MeasurePrimitive(chart, series, p1, p2, bars);
+    series.attachPrimitive(primitive);
+    measureObjectsRef.current[id] = primitive;
+    setMeasureLines((prev) => [...prev, { id, p1, p2, bars }]);
+  }, []);
+
+  const removeMeasure = useCallback((id: string) => {
+    const series = candleSeriesRef.current;
+    const primitive = measureObjectsRef.current[id];
+    if (series && primitive) series.detachPrimitive(primitive);
+    delete measureObjectsRef.current[id];
+    setMeasureLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
   // Pre-mercado / after-hours. Se refresca UNA VEZ POR HORA a propósito: el
@@ -1262,23 +1628,20 @@ export function CandleChart({
             onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
           />
-          <button
-            onClick={() => setDrawingHorizontal((v) => !v)}
-            className="rounded px-2.5 py-1.5 font-mono text-xs transition-colors"
-            style={{
-              backgroundColor: drawingHorizontal ? palette.buttonActiveBg : palette.buttonBg,
-              color: drawingHorizontal ? palette.buttonActiveText : palette.buttonText,
-            }}
-            title="Dibujar línea horizontal — clic en el gráfico para colocarla"
-            aria-pressed={drawingHorizontal}
-          >
-            ─ Línea
-          </button>
+          <DrawToolsDropdown
+            drawTool={drawTool}
+            onSelect={(t) => setDrawTool((prev) => (prev === t ? "none" : t))}
+            palette={palette}
+          />
           <ObjectsDropdown
             showBollinger={showBollinger}
             showVolume={showVolume}
             horizontalLines={horizontalLines}
             onRemoveHorizontalLine={removeHorizontalLine}
+            trendLines={trendLines}
+            onRemoveTrendLine={removeTrendLine}
+            measureLines={measureLines}
+            onRemoveMeasureLine={removeMeasure}
             palette={palette}
           />
           {fillHeight && (
@@ -1402,7 +1765,7 @@ export function CandleChart({
         <div
           ref={containerRef}
           className={fillHeight ? "h-full w-full" : "w-full"}
-          style={drawingHorizontal ? { cursor: "crosshair" } : undefined}
+          style={drawTool !== "none" ? { cursor: "crosshair" } : undefined}
         />
         {/* Cuenta regresiva hasta que cierre la vela actual y abra la
             siguiente — pegada justo debajo de la etiqueta de precio actual,
