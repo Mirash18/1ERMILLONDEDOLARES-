@@ -3,6 +3,15 @@ import Link from "next/link";
 import { TickerStrip } from "@/components/TickerStrip";
 import { CandleChart } from "@/components/CandleChart";
 import { AuthStatus } from "@/components/AuthStatus";
+import { TestimonialsMarquee } from "@/components/TestimonialsMarquee";
+import { getTestimonials } from "@/lib/testimonials";
+
+// Sin esto, Next.js detecta que la página no depende de nada dinámico
+// (cookies, headers, params) y la deja estática desde el build — un
+// testimonio nuevo subido desde /admin/testimonios nunca aparecería sin
+// un redeploy. 60s es más que suficiente para "se va viendo lo que se
+// va haciendo día a día" sin pegarle a Redis en cada visita.
+export const revalidate = 60;
 
 const modules = [
   {
@@ -19,7 +28,9 @@ const modules = [
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const testimonials = await getTestimonials();
+
   return (
     <div className="flex flex-1 flex-col bg-bg">
       <header className="border-b border-border">
@@ -69,10 +80,14 @@ export default function Home() {
           <TickerStrip />
         </section>
 
-        <section className="mb-16">
+        <section>
           <CandleChart />
         </section>
+      </main>
 
+      <TestimonialsMarquee items={testimonials} />
+
+      <div className="mx-auto w-full max-w-5xl px-6 py-16">
         <section>
           <div className="mb-6 flex items-center gap-3">
             <h2 className="font-display text-xl font-medium text-text">
@@ -100,7 +115,7 @@ export default function Home() {
             ))}
           </div>
         </section>
-      </main>
+      </div>
 
       <footer className="border-t border-border px-6 py-6 text-center font-mono text-[11px] text-text-soft">
         1er Millón de Dólares — contenido educativo, no es asesoría financiera.

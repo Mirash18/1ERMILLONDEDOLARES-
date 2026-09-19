@@ -81,6 +81,35 @@ body {
     linear-gradient(160deg, #0a1420, #101d14 80%);
   overflow: hidden;
 }
+/* Carrusel de testimonios (Testimonials Marquee) — dos filas que se
+   desplazan solas en direcciones opuestas, como pidió Alejo ("de
+   izquierda a derecha o de derecha a izquierda") para que no se apilen
+   hacia abajo. Cada fila duplica su contenido una vez (ver el
+   componente) para que el bucle sea perfecto sin salto visible. */
+@keyframes marquee-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes marquee-right {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+.marquee-track {
+  animation: marquee-left 45s linear infinite;
+}
+.marquee-track-reverse {
+  animation: marquee-right 55s linear infinite;
+}
+.marquee-row:hover .marquee-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track,
+  .marquee-track-reverse {
+    animation: none;
+  }
+}
+
 .hero-brand-bg::before {
   content: "";
   position: absolute;

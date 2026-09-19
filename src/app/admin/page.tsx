@@ -49,12 +49,20 @@ export default async function AdminPage() {
           >
             1er <span className="text-gold">Millón</span> de Dólares
           </Link>
-          <Link
-            href="/"
-            className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
-          >
-            ← volver
-          </Link>
+          <div className="flex items-center gap-5">
+            <Link
+              href="/admin/testimonios"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              Testimonios
+            </Link>
+            <Link
+              href="/"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              ← volver
+            </Link>
+          </div>
         </div>
       </header>
 

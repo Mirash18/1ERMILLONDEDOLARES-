@@ -1280,14 +1280,72 @@ no toda la app:
 - Botón CTA nuevo ("Empezar en la academia" → `/introduccion`) en azul
   (`#4c8fd1`), primer llamado a la acción real que tiene el homepage.
 
-**Pendiente de esta misma iniciativa** (siguiente conversación/tanda):
-secciones nuevas — qué incluye la suscripción, qué aprenderás,
-testimonios, ganancias semanales de alumnos — inspiradas en el sitio de
-referencia pero con contenido propio. Falta confirmar con Alejo si
-testimonios/ganancias arrancan vacíos hasta tener datos reales o con
-contenido de ejemplo mientras tanto (propuesto: vacíos, mismo criterio
-que ya se usó con `DayBandsPrimitive` de no fingir datos que no
-existen — pendiente de que él lo confirme).
+**Pendiente de esta misma iniciativa**: qué incluye la suscripción, qué
+aprenderás, ganancias semanales de alumnos — inspiradas en el sitio de
+referencia pero con contenido propio. Testimonios (ver siguiente
+sección) ya quedó resuelto.
+
+## Repositorio de testimonios — Vercel Blob + Redis (19 sept. 2026)
+
+Siguiendo con el rediseño: Alejo quiere poder ir subiendo, día a día, un
+testimonio corto (imagen o video + texto + nombre) sin tener que
+pasármelo por chat cada vez — un "repositorio" de verdad, no una lista
+fija en el código como `modules` en `page.tsx`.
+
+**Dónde vive cada cosa:**
+
+- **Archivos (imagen/video)** → **Vercel Blob**, un almacenamiento de
+  objetos nuevo para este proyecto (se activó desde el dashboard de
+  Vercel — Storage → Create Database → Blob — con la casilla "Add a
+  read-write token" marcada para que quedara `BLOB_READ_WRITE_TOKEN` en
+  Production y Preview). Local no tiene ese token configurado (mismo
+  criterio del resto del proyecto: sin la llave, esa pieza no funciona
+  pero tampoco tumba nada) — se probó en local que la UI y las validaciones
+  de tipo compilan bien, pero la subida real de un archivo solo se puede
+  verificar en producción.
+- **Texto (nombre, testimonio, URL del archivo, tipo, fecha)** → el
+  mismo Redis (Upstash) que ya usaba `watchlist.ts` — una lista bajo la
+  llave `testimonials:list`, sin vencimiento, tope de 60 registros (los
+  más viejos se caen solos). No hizo falta ninguna base de datos nueva
+  para esto.
+
+**Piezas nuevas:**
+
+- `src/lib/testimonials.ts` — `getTestimonials`/`addTestimonial`/
+  `removeTestimonial`, mismo patrón de "fallar en silencio sin las
+  llaves puestas" que ya usa el resto del proyecto.
+- `POST`/`DELETE /api/admin/testimonials` — protegidas con `isAdmin()`
+  (el mismo helper de `/admin`). `POST` recibe `multipart/form-data`
+  (archivo + nombre + texto), valida tipo (imagen/video) y tamaño (8 MB
+  imagen, 60 MB video), sube a Blob y guarda el registro en Redis. Si el
+  registro no se pudo guardar, borra el archivo que ya había subido a
+  Blob en vez de dejarlo huérfano.
+- `/admin/testimonios` — página nueva (protegida), formulario de subida
+  + galería de lo ya subido con botón de borrar. Enlazada desde `/admin`.
+- `TestimonialsMarquee` — componente de **servidor** (no hace falta
+  `"use client"`, el movimiento es puro CSS) que pinta el carrusel en el
+  homepage: dos filas moviéndose en direcciones opuestas
+  (`@keyframes marquee-left`/`marquee-right` en `globals.css`), cada
+  fila con su contenido duplicado una vez para que el bucle no se note,
+  en pausa al pasar el mouse y quieto del todo con
+  `prefers-reduced-motion`. Fondo crema/blanco (`#f4f1e8`), a propósito
+  distinto del azul/oliva del hero — mismo criterio que se explicó a
+  Alejo: un testimonio se lee mejor en una tarjeta clara, y separa
+  visualmente "esto lo dice la gente" de "esto lo decimos nosotros". Si
+  no hay testimonios todavía, el componente no pinta nada (`return
+  null`) — no se le muestra una sección vacía a un visitante real.
+
+**Bug evitado — la página se iba a quedar estática de por vida:**
+`Home()` pasó a ser `async` para poder leer `getTestimonials()` en el
+servidor, pero Next.js detectó que la página no depende de nada dinámico
+(sin cookies/headers/params) y la iba a dejar **prerenderizada en el
+build** — un testimonio nuevo subido desde `/admin/testimonios` nunca
+habría aparecido en el sitio real sin un redeploy completo, sin importar
+cuántos se subieran. Se agregó `export const revalidate = 60;` en
+`page.tsx` (ISR) para que la página se vuelva a generar como mucho una
+vez por minuto — sin esto, la funcionalidad ENTERA de "ir subiendo
+testimonios" habría quedado rota en silencio, sin ningún error visible
+en build ni en runtime.
 
 ## Decisiones pendientes
 
