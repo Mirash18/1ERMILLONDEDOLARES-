@@ -1386,6 +1386,53 @@ mismo límite que ya se había aceptado para todo lo de Blob en este
 proyecto: la subida de punta a punta solo se puede probar en
 producción.
 
+## Bug real #2: el Blob store había quedado en modo "Private" (19 sept. 2026)
+
+Con la subida directa del navegador arreglada, Alejo probó de nuevo con
+un archivo real y esta vez se quedó pegado en "Subiendo…" sin terminar
+nunca — "parece que está en un bucle", como él lo describió. Y sí,
+literalmente lo estaba: `@vercel/blob` reintenta automáticamente
+cuando la petición de subida falla por lo que parece un error de red.
+
+Diagnóstico (reproducido a mano con `fetch` desde la consola del
+navegador, sin pasar por la librería, para descartar que fuera un bug
+de la librería en sí): la subida directa al archivo SÍ le pide un token
+a nuestro servidor correctamente (200 OK), pero el `PUT` real del
+archivo — que va del navegador directo a `vercel.com/api/blob`, nunca
+toca nuestro servidor — fallaba siempre con: *"blocked by CORS policy:
+No 'Access-Control-Allow-Origin' header"*.
+
+La causa real, encontrada revisando el store en el dashboard de Vercel
+(Storage → el store → Settings → Store Access): quedó creado en modo
+**"Private"** — la opción marcada "Recommended" y la que queda
+seleccionada por defecto si no se cambia a propósito, algo que se pasó
+por alto al crearlo la primera vez. Un store privado **nunca** sirve un
+archivo con acceso público sin importar qué le pida el código
+(`access: "public"` en `put()`/`upload()` no tiene ningún efecto ahí) —
+y ese modo **no se puede cambiar después de creado**, según la propia
+página de configuración del store.
+
+Arreglo: no se pudo borrar el store privado (el clasificador de
+permisos de Claude Code bloqueó el borrado — "Cloud Storage Mass
+Delete" — incluso con a Alejo confirmando explícitamente en el chat, a
+propósito, como protección extra que ni su propia confirmación
+puede saltarse desde ahí; queda pendiente que él lo borre a mano desde
+el dashboard, ya que está vacío y no se pierde nada). En su lugar se
+creó un store **nuevo** en modo **Public**, con prefijo de variables
+`BLOB_PUBLIC_*` (el prefijo por defecto, `BLOB_*`, ya estaba tomado por
+el store privado). Como `@vercel/blob` busca por defecto
+`BLOB_READ_WRITE_TOKEN` a secas, hubo que pasar
+`token: process.env.BLOB_PUBLIC_READ_WRITE_TOKEN` a mano tanto en
+`handleUpload` (`upload/route.ts`) como en `del()` (`route.ts`) — sin
+esto, seguiría usando (o buscando en vano) el token del store privado
+equivocado.
+
+**Para la próxima vez que se cree un recurso de Storage en este
+proyecto**: revisar con cuidado cualquier opción de "Access"/visibilidad
+antes de confirmar, sobre todo si la opción recomendada por Vercel no es
+la que hace falta — acá "Recommended" significaba "más seguro por
+defecto", no "lo que este proyecto necesita".
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

@@ -24,7 +24,9 @@ export async function DELETE(request: Request) {
 
   const removed = await removeTestimonial(id);
   if (removed) {
-    await del(removed.mediaUrl).catch(() => {});
+    // Mismo token con prefijo BLOB_PUBLIC_* del store público — ver el
+    // comentario en upload/route.ts.
+    await del(removed.mediaUrl, { token: process.env.BLOB_PUBLIC_READ_WRITE_TOKEN }).catch(() => {});
   }
 
   return NextResponse.json({ ok: true });

@@ -26,12 +26,24 @@ const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // 60 MB
  * alcanzable desde internet, así que **no dispara en local** (mismo
  * límite ya aceptado en este proyecto: solo se puede probar de punta a
  * punta en producción).
+ *
+ * `token: process.env.BLOB_PUBLIC_READ_WRITE_TOKEN` — el primer Blob
+ * store que se creó (19 sept. 2026) quedó en modo "Private" sin darnos
+ * cuenta (esa opción no se puede cambiar después de creado), y un store
+ * privado nunca sirve un archivo con acceso público sin importar lo que
+ * pida el código — por eso la primera versión fallaba con un error de
+ * CORS al subir un archivo real. Se creó un store nuevo en modo
+ * "Public" con el prefijo `BLOB_PUBLIC_*` (el prefijo por defecto,
+ * `BLOB_*`, ya estaba tomado por el store privado) — como no es el
+ * nombre por defecto que la librería busca sola
+ * (`BLOB_READ_WRITE_TOKEN`), hay que pasarlo a mano.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
 
   try {
     const jsonResponse = await handleUpload({
+      token: process.env.BLOB_PUBLIC_READ_WRITE_TOKEN,
       body,
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
