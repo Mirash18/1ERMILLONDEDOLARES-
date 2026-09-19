@@ -1168,6 +1168,48 @@ bajaron a un 80% de brillo (`#067A67`/`#C22B37`) — mismo tono, un poco
 más oscuros, para que no compitan tanto con las velas ni con la flecha
 nueva.
 
+## Cuadro de texto libre (19 sept. 2026)
+
+Nueva herramienta en "Dibujar" (`TextBoxState`): un cuadro que se coloca
+con un clic, se puede agrandar/achicar, escribir dentro y mover por el
+gráfico — a diferencia de los demás dibujos, **no es un
+`ISeriesPrimitive`** (canvas), es un `<div>` de verdad superpuesto. La
+razón es simple: hace falta contenido editable de verdad (escribir,
+seleccionar, pegar el cursor donde uno quiera), y eso no existe sobre un
+canvas — habría que reinventar un editor de texto a mano.
+
+- **Posición vs. tamaño**: solo la esquina superior izquierda
+  (`logical`/`price`, igual que los demás dibujos) seguía al gráfico al
+  hacer pan/zoom — se recalcula en píxeles (`textBoxPixels`) en los
+  mismos disparadores que ya usaba la insignia de "próxima vela"
+  (`updatePriceY`, reutilizada para las dos cosas). El tamaño
+  (`width`/`height`) es un rectángulo fijo en píxeles, independiente del
+  zoom — TradingView tampoco escala sus cuadros de texto con el zoom.
+- **Dónde vive en el DOM**: como **hermano** de `containerRef` (el `<div>`
+  vacío donde `lightweight-charts` mete sus propios canvas), no como
+  hijo — así un clic sobre un cuadro de texto nunca atraviesa el
+  `mousedown` nativo del gráfico (que solo escucha eventos que de verdad
+  se originan dentro de `containerRef`), sin tener que pelear con el
+  orden de `stopPropagation` entre el sistema de eventos de React y un
+  listener nativo agregado a mano.
+- **Arrastrar/redimensionar**: mismo patrón que agarrar el tirador de una
+  Tendencia (`hitTestHandle`), pero en DOM en vez de canvas —
+  `mousedown` en la franja superior o en la esquina inferior derecha
+  agrega listeners de `mousemove`/`mouseup` a `window`, convierte el
+  delta en píxeles de vuelta a lógica/precio (para la posición) o lo
+  aplica directo (para el tamaño, que es puramente en píxeles), y los
+  quita al soltar.
+- **Editar el texto**: `contentEditable`, no un `<textarea>` controlado
+  por React — si el texto se pusiera de vuelta desde el estado en cada
+  `onInput`, pelearía con la posición del cursor mientras se escribe. El
+  `ref` callback solo pone `textContent` la primera vez que ve ese nodo
+  (compara contra lo ya guardado en `textBoxContentRefs`), nunca de
+  nuevo en renders posteriores.
+- Un cuadro recién creado queda pendiente de foco
+  (`pendingFocusTextBoxIdRef`) y se enfoca solo, con el cursor
+  seleccionando todo el texto por defecto, apenas termina de pintarse —
+  para escribir de inmediato sin un clic extra.
+
 ## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
 
 El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit

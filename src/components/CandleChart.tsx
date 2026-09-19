@@ -148,7 +148,22 @@ const PALETTES: Record<Theme, Palette> = {
 // charts` sabe convertir de sobra hacia ambos lados sin necesitar una vela
 // real en esa posición.
 type DrawPoint = { logical: number; price: number };
-type DrawTool = "none" | "horizontal" | "trend" | "measure" | "regression";
+type DrawTool = "none" | "horizontal" | "trend" | "measure" | "regression" | "text";
+
+// Cuadro de texto libre — a diferencia de los demás dibujos, no vive como
+// ISeriesPrimitive (canvas), sino como un <div> de verdad superpuesto al
+// gráfico: hace falta contenido editable de verdad (escribir, seleccionar,
+// pegar), y eso no se puede hacer sobre un canvas. Solo la esquina superior
+// izquierda (`logical`/`price`) sigue al gráfico al desplazarse o hacer
+// zoom; el tamaño es un rectángulo fijo en píxeles, independiente del zoom.
+type TextBoxState = {
+  id: string;
+  logical: number;
+  price: number;
+  width: number;
+  height: number;
+  text: string;
+};
 
 // Qué tan cerca (en píxeles) hay que soltar el clic de un extremo ya
 // trazado para "agarrarlo" y moverlo, en vez de dibujar uno nuevo.
@@ -912,6 +927,7 @@ const DRAW_TOOLS = [
   { key: "trend" as const, label: "Tendencia", hint: "Clic, arrastra y suelta" },
   { key: "measure" as const, label: "Regla", hint: "Clic, arrastra y suelta" },
   { key: "regression" as const, label: "Regresión", hint: "Clic, arrastra y suelta" },
+  { key: "text" as const, label: "Texto", hint: "Un clic coloca el cuadro" },
 ];
 
 function DrawToolsDropdown({
@@ -996,6 +1012,8 @@ function ObjectsDropdown({
   onRemoveMeasureLine,
   regressionLines,
   onRemoveRegressionLine,
+  textBoxes,
+  onRemoveTextBox,
   palette,
 }: {
   showBollinger: boolean;
@@ -1009,6 +1027,8 @@ function ObjectsDropdown({
   onRemoveMeasureLine: (id: string) => void;
   regressionLines: { id: string; fromLogical: number; toLogical: number }[];
   onRemoveRegressionLine: (id: string) => void;
+  textBoxes: TextBoxState[];
+  onRemoveTextBox: (id: string) => void;
   palette: Palette;
 }) {
   const [open, setOpen] = useState(false);
@@ -1090,7 +1110,8 @@ function ObjectsDropdown({
           {horizontalLines.length === 0 &&
           trendLines.length === 0 &&
           measureLines.length === 0 &&
-          regressionLines.length === 0 ? (
+          regressionLines.length === 0 &&
+          textBoxes.length === 0 ? (
             <p
               className="border-t px-3 py-2 font-mono text-[11px] opacity-60"
               style={{ color: palette.textSoft, borderColor: palette.wrapperBorder }}
@@ -1187,6 +1208,26 @@ function ObjectsDropdown({
                   </button>
                 </div>
               ))}
+              {textBoxes.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
+                  style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <span className="inline-block h-2.5 w-3 border" style={{ borderColor: "#F5A623" }} />
+                    Texto{t.text ? `: ${t.text.slice(0, 20)}` : " (vacío)"}
+                  </span>
+                  <button
+                    onClick={() => onRemoveTextBox(t.id)}
+                    style={{ color: palette.textSoft }}
+                    title="Borrar este cuadro de texto"
+                    aria-label="Borrar este cuadro de texto"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </>
           )}
         </div>
@@ -1248,6 +1289,15 @@ export function CandleChart({
   const [regressionLines, setRegressionLines] = useState<
     { id: string; fromLogical: number; toLogical: number }[]
   >([]);
+  // Cuadros de texto libre — a diferencia de los demás dibujos no son
+  // ISeriesPrimitive, son <div> de verdad superpuestos al gráfico (ver
+  // TextBoxState más arriba). `textBoxPixels` es la posición en píxeles ya
+  // calculada de cada uno (se recalcula junto con la insignia de precio en
+  // updatePriceY, cada vez que cambia el zoom/desplazamiento/tamaño).
+  const [textBoxes, setTextBoxes] = useState<TextBoxState[]>([]);
+  const [textBoxPixels, setTextBoxPixels] = useState<
+    Record<string, { x: number; y: number }>
+  >({});
   // Qué herramienta de dibujo está activa — "none" es el estado normal
   // (clics solo mueven el cursor). Con una herramienta activa, el próximo
   // clic (o los próximos dos, para tendencia/regla/regresión) dibuja en
@@ -1310,6 +1360,33 @@ export function CandleChart({
   // o se descarta si el arrastre fue demasiado corto para ser intencional.
   const liveTrendRef = useRef<TrendLinePrimitive | null>(null);
   const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
+  // Copia siempre actualizada de `textBoxes` — la necesitan los handlers de
+  // arrastre/redimensión (agregados a `window`, creados fuera del ciclo de
+  // renders de React) para leer la posición/tamaño de partida sin quedarse
+  // con un valor viejo.
+  const textBoxesRef = useRef<TextBoxState[]>([]);
+  // El <div contentEditable> de cada cuadro — para poder enfocarlo recién
+  // creado y para leer/poner su texto sin pelear con React por el cursor
+  // (ver el `ref` callback donde se usa: solo pone `textContent` la
+  // primera vez que ve ese nodo, nunca en renders posteriores).
+  const textBoxContentRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Id del cuadro recién creado que hay que enfocar apenas termine de
+  // pintarse — se dispara desde el efecto que sincroniza `textBoxesRef`.
+  const pendingFocusTextBoxIdRef = useRef<string | null>(null);
+  const draggingTextBoxRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    startLogical: number;
+    startPrice: number;
+  } | null>(null);
+  const resizingTextBoxRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
   const liveRegressionRef = useRef<RegressionChannelPrimitive | null>(null);
   // Copia siempre actualizada de `data`, para leerla desde callbacks creados
   // una sola vez (como el de resize) sin quedarse con datos viejos.
@@ -1330,10 +1407,24 @@ export function CandleChart({
   const updatePriceY = useCallback(() => {
     const candles = dataRef.current?.candles;
     const series = candleSeriesRef.current;
-    if (!candles || candles.length === 0 || !series) return;
-    const lastClose = candles[candles.length - 1].close;
-    const y = series.priceToCoordinate(lastClose);
-    setPriceY(y);
+    if (candles && candles.length > 0 && series) {
+      const lastClose = candles[candles.length - 1].close;
+      setPriceY(series.priceToCoordinate(lastClose));
+    }
+
+    // Misma idea para los cuadros de texto: su posición en pantalla depende
+    // del zoom/desplazamiento actual del gráfico, así que se recalcula en
+    // los mismos disparadores que la insignia de precio de arriba.
+    const chart = chartRef.current;
+    if (chart && series) {
+      const next: Record<string, { x: number; y: number }> = {};
+      for (const box of textBoxesRef.current) {
+        const x = logicalToX(chart, box.logical);
+        const boxY = series.priceToCoordinate(box.price);
+        if (x !== null && boxY !== null) next[box.id] = { x, y: boxY };
+      }
+      setTextBoxPixels(next);
+    }
   }, []);
 
   // Qué símbolos puede elegir quien está mirando. El servidor decide (según
@@ -1590,6 +1681,12 @@ export function CandleChart({
         return;
       }
 
+      if (tool === "text") {
+        addTextBox(start);
+        setDrawTool("none");
+        return;
+      }
+
       dragStartRef.current = start;
       isDraggingRef.current = true;
 
@@ -1752,6 +1849,13 @@ export function CandleChart({
     setTrendLines([]);
     setMeasureLines([]);
     setRegressionLines([]);
+    // Los cuadros de texto no son primitivos de canvas (son <div>, ver
+    // TextBoxState), así que no hay nada que desprender de `series` — solo
+    // vaciar el estado y sus refs.
+    textBoxContentRefs.current = {};
+    pendingFocusTextBoxIdRef.current = null;
+    setTextBoxes([]);
+    setTextBoxPixels({});
     dragStartRef.current = null;
     isDraggingRef.current = false;
     // Por si el símbolo cambió a mitad de un arrastre de un tirador (mismo
@@ -1760,6 +1864,16 @@ export function CandleChart({
     if (editingRef.current) {
       chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
       editingRef.current = null;
+    }
+    if (draggingTextBoxRef.current) {
+      draggingTextBoxRef.current = null;
+      window.removeEventListener("mousemove", onDragTextBoxMove);
+      window.removeEventListener("mouseup", onDragTextBoxUp);
+    }
+    if (resizingTextBoxRef.current) {
+      resizingTextBoxRef.current = null;
+      window.removeEventListener("mousemove", onResizeTextBoxMove);
+      window.removeEventListener("mouseup", onResizeTextBoxUp);
     }
     setDrawTool("none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1902,6 +2016,28 @@ export function CandleChart({
     drawToolRef.current = drawTool;
   }, [drawTool]);
 
+  // Copia siempre actualizada para los handlers de arrastre/redimensión, y
+  // recalcula posiciones en píxeles (por si se acaba de agregar/quitar un
+  // cuadro, o cambió de tamaño) sin esperar al próximo pan/zoom.
+  useEffect(() => {
+    textBoxesRef.current = textBoxes;
+    updatePriceY();
+
+    const pendingId = pendingFocusTextBoxIdRef.current;
+    if (pendingId && textBoxes.some((b) => b.id === pendingId)) {
+      pendingFocusTextBoxIdRef.current = null;
+      const el = textBoxContentRefs.current[pendingId];
+      if (el) {
+        el.focus();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+    }
+  }, [textBoxes, updatePriceY]);
+
   // Fondos por día: se adjunta/desprende según el checkbox, en vez de
   // crearse y destruirse — el mismo objeto sirve para todos los símbolos y
   // marcos de tiempo, porque lee las velas en vivo en cada repintado.
@@ -2007,6 +2143,112 @@ export function CandleChart({
     delete regressionObjectsRef.current[id];
     setRegressionLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
+
+  // Cuadro de texto — un solo clic lo coloca (como la línea horizontal) con
+  // un tamaño y texto por defecto, y queda pendiente de foco (ver el efecto
+  // que sincroniza textBoxesRef) para que el cursor ya esté listo para
+  // escribir sin un segundo clic aparte.
+  const addTextBox = useCallback((point: DrawPoint) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    pendingFocusTextBoxIdRef.current = id;
+    setTextBoxes((prev) => [
+      ...prev,
+      { id, logical: point.logical, price: point.price, width: 160, height: 60, text: "" },
+    ]);
+  }, []);
+
+  const removeTextBox = useCallback((id: string) => {
+    delete textBoxContentRefs.current[id];
+    setTextBoxes((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  // Se llama en cada `onInput` del contentEditable — deliberadamente no se
+  // vuelve a poner ese texto de vuelta en el <div> (eso pelearía con la
+  // posición del cursor mientras se escribe); solo se guarda para el panel
+  // de Objetos y para que sobreviva un re-render por otra razón.
+  const commitTextBoxText = useCallback((id: string, text: string) => {
+    setTextBoxes((prev) => prev.map((b) => (b.id === id ? { ...b, text } : b)));
+  }, []);
+
+  const onDragTextBoxMove = useCallback((e: MouseEvent) => {
+    const drag = draggingTextBoxRef.current;
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!drag || !chart || !series) return;
+    const anchorX = logicalToX(chart, drag.startLogical);
+    const anchorY = series.priceToCoordinate(drag.startPrice);
+    if (anchorX === null || anchorY === null) return;
+    const newLogical = chart.timeScale().coordinateToLogical(anchorX + (e.clientX - drag.startX));
+    const newPrice = series.coordinateToPrice(anchorY + (e.clientY - drag.startY));
+    if (newLogical === null || newPrice === null) return;
+    setTextBoxes((prev) =>
+      prev.map((b) => (b.id === drag.id ? { ...b, logical: newLogical, price: newPrice } : b))
+    );
+  }, []);
+
+  const onDragTextBoxUp = useCallback(() => {
+    draggingTextBoxRef.current = null;
+    window.removeEventListener("mousemove", onDragTextBoxMove);
+    window.removeEventListener("mouseup", onDragTextBoxUp);
+  }, [onDragTextBoxMove]);
+
+  // Arrastrar desde la franja superior del cuadro lo mueve — el ancla
+  // (logical/price) sigue al gráfico si se hace pan/zoom mientras tanto,
+  // por eso se recalcula su posición en píxeles de partida (`anchorX`/`Y`)
+  // en cada mousemove en vez de asumir que no cambió.
+  const startDragTextBox = useCallback(
+    (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const box = textBoxesRef.current.find((b) => b.id === id);
+      if (!box) return;
+      draggingTextBoxRef.current = {
+        id,
+        startX: e.clientX,
+        startY: e.clientY,
+        startLogical: box.logical,
+        startPrice: box.price,
+      };
+      window.addEventListener("mousemove", onDragTextBoxMove);
+      window.addEventListener("mouseup", onDragTextBoxUp);
+    },
+    [onDragTextBoxMove, onDragTextBoxUp]
+  );
+
+  const onResizeTextBoxMove = useCallback((e: MouseEvent) => {
+    const resize = resizingTextBoxRef.current;
+    if (!resize) return;
+    const width = Math.max(60, resize.startWidth + (e.clientX - resize.startX));
+    const height = Math.max(30, resize.startHeight + (e.clientY - resize.startY));
+    setTextBoxes((prev) => prev.map((b) => (b.id === resize.id ? { ...b, width, height } : b)));
+  }, []);
+
+  const onResizeTextBoxUp = useCallback(() => {
+    resizingTextBoxRef.current = null;
+    window.removeEventListener("mousemove", onResizeTextBoxMove);
+    window.removeEventListener("mouseup", onResizeTextBoxUp);
+  }, [onResizeTextBoxMove]);
+
+  // Tirador en la esquina inferior derecha — tamaño en píxeles fijo, no
+  // sigue el zoom del gráfico (a diferencia de la posición del cuadro).
+  const startResizeTextBox = useCallback(
+    (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const box = textBoxesRef.current.find((b) => b.id === id);
+      if (!box) return;
+      resizingTextBoxRef.current = {
+        id,
+        startX: e.clientX,
+        startY: e.clientY,
+        startWidth: box.width,
+        startHeight: box.height,
+      };
+      window.addEventListener("mousemove", onResizeTextBoxMove);
+      window.addEventListener("mouseup", onResizeTextBoxUp);
+    },
+    [onResizeTextBoxMove, onResizeTextBoxUp]
+  );
 
   // Pre-mercado / after-hours. Se refresca UNA VEZ POR HORA a propósito: el
   // dato no necesita ir al segundo y así casi no consume créditos de la API.
@@ -2269,6 +2511,8 @@ export function CandleChart({
             onRemoveMeasureLine={removeMeasure}
             regressionLines={regressionLines}
             onRemoveRegressionLine={removeRegression}
+            textBoxes={textBoxes}
+            onRemoveTextBox={removeTextBox}
             palette={palette}
           />
           {fillHeight && (
@@ -2408,6 +2652,57 @@ export function CandleChart({
         >
           Próxima vela en{" "}
           {secondsToNextCandle === null ? "—:—" : formatCountdown(secondsToNextCandle)}
+        </div>
+        {/* Capa de cuadros de texto — hermana de containerRef, no hija: así
+            un clic sobre un cuadro nunca pasa por el mousedown nativo del
+            gráfico (que vive sobre containerRef), y no hace falta pelear
+            con el orden de stopPropagation. `pointer-events-none` en el
+            contenedor deja pasar el resto de clics al gráfico de abajo;
+            cada cuadro se activa individualmente con `pointer-events-auto`. */}
+        <div className="pointer-events-none absolute inset-0 z-20">
+          {textBoxes.map((box) => {
+            const pos = textBoxPixels[box.id];
+            if (!pos) return null;
+            return (
+              <div
+                key={box.id}
+                className="pointer-events-auto absolute flex flex-col overflow-hidden rounded border"
+                style={{
+                  left: pos.x,
+                  top: pos.y,
+                  width: box.width,
+                  height: box.height,
+                  borderColor: "#F5A623",
+                  backgroundColor: "rgba(17,20,24,0.78)",
+                }}
+              >
+                <div
+                  className="h-3 shrink-0 cursor-move"
+                  style={{ backgroundColor: "rgba(245,166,35,0.55)" }}
+                  onMouseDown={(e) => startDragTextBox(e, box.id)}
+                />
+                <div
+                  ref={(el) => {
+                    if (el && textBoxContentRefs.current[box.id] !== el) {
+                      textBoxContentRefs.current[box.id] = el;
+                      el.textContent = box.text;
+                    }
+                  }}
+                  contentEditable
+                  suppressContentEditableWarning
+                  className="flex-1 overflow-auto px-1.5 py-1 font-mono text-xs text-white outline-none"
+                  style={{ wordBreak: "break-word" }}
+                  onInput={(e) => commitTextBoxText(box.id, e.currentTarget.textContent ?? "")}
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+                <div
+                  onMouseDown={(e) => startResizeTextBox(e, box.id)}
+                  className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize"
+                  style={{ backgroundColor: "#F5A623" }}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
