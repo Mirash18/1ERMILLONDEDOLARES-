@@ -1154,6 +1154,20 @@ Deliberadamente no se tocó: líneas horizontales (un solo clic ya elige el
 precio exacto, no aplica) y el canal de regresión (el usuario solo pidió
 esto para Tendencia y Regla en el video).
 
+## Regla: flecha central y colores un poco más oscuros (19 sept. 2026)
+
+Retoque puramente visual pedido por Alejo sobre `MeasurePrimitive`: una
+flechita en el centro del recuadro (triángulo relleno, apunta hacia
+arriba o hacia abajo según `p2.price >= p1.price`) para leer sube/baja de
+un vistazo, sin depender solo de la etiqueta de texto. Se salta el dibujo
+si el recuadro es más chico que la flecha (mediciones muy cortas) para
+que no se desborde.
+
+De paso, el verde/rojo (los mismos de TradingView, `#089981`/`#F23645`)
+bajaron a un 80% de brillo (`#067A67`/`#C22B37`) — mismo tono, un poco
+más oscuros, para que no compitan tanto con las velas ni con la flecha
+nueva.
+
 ## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
 
 El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit

@@ -286,8 +286,12 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
             draw(target: CanvasRenderingTarget2D) {
               const { chart, series, p1, p2, barsBetween } = primitive;
               const subiendo = p2.price >= p1.price;
-              const color = subiendo ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
-              const fondo = subiendo ? "rgba(8,153,129,0.15)" : "rgba(242,54,69,0.15)";
+              // Mismo verde/rojo de siempre pero un poco más oscuros (80% de
+              // brillo) — a pedido de Alejo, para que la flecha central y el
+              // recuadro no compitan tanto en intensidad con las velas.
+              const solido = subiendo ? "#067A67" : "#C22B37";
+              const color = subiendo ? "rgba(6,122,103,0.55)" : "rgba(194,43,55,0.55)";
+              const fondo = subiendo ? "rgba(6,122,103,0.15)" : "rgba(194,43,55,0.15)";
 
               const x1 = logicalToX(chart, p1.logical);
               const y1 = series.priceToCoordinate(p1.price);
@@ -321,11 +325,35 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
                   context.fill();
                 }
 
+                // Flechita en el centro del recuadro, apuntando hacia donde
+                // se movió el precio — un vistazo rápido de sube/baja sin
+                // tener que leer la etiqueta, como en TradingView. Se salta
+                // si el recuadro es demasiado chico para que quepa sin
+                // desbordarse.
+                const midX = (left + right) / 2;
+                const midY = (top + bottom) / 2;
+                const arrow = 8;
+                if (right - left > arrow * 2 + 6 && bottom - top > arrow * 2 + 6) {
+                  context.fillStyle = solido;
+                  context.beginPath();
+                  if (subiendo) {
+                    context.moveTo(midX, midY - arrow);
+                    context.lineTo(midX - arrow, midY + arrow);
+                    context.lineTo(midX + arrow, midY + arrow);
+                  } else {
+                    context.moveTo(midX, midY + arrow);
+                    context.lineTo(midX - arrow, midY - arrow);
+                    context.lineTo(midX + arrow, midY - arrow);
+                  }
+                  context.closePath();
+                  context.fill();
+                }
+
                 context.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
                 const textWidth = context.measureText(etiqueta).width;
                 const labelX = Math.min(Math.max(left, 4), right - textWidth - 8);
                 const labelY = top > 16 ? top - 6 : bottom + 16;
-                context.fillStyle = subiendo ? "#089981" : "#F23645";
+                context.fillStyle = solido;
                 context.fillText(etiqueta, labelX + 4, labelY);
                 context.restore();
               });
