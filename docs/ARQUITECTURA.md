@@ -1050,6 +1050,53 @@ Con esto, de las 15 cosas del video solo faltan **alertas de precio** y
 **compra/venta simulada** — los dos sistemas grandes que Alejo decidió
 dejar para una conversación aparte.
 
+## Bug real: los dibujos con dos puntos no eran de verdad libres (19 sept. 2026)
+
+Alejo probó Tendencia y dijo que la línea salía "rota" y que quería poder
+marcarla "libre" — no que el programa la decidiera. La causa tenía dos
+capas:
+
+1. **De diseño**: Tendencia/Regla/Regresión se dibujaban con dos clics
+   sueltos (clic en el punto A, clic en el punto B) sin ver nada entre
+   medio — el resultado aparecía de golpe después del segundo clic, sin
+   ninguna vista previa. Cualquier cosa rara en el segundo punto se sentía
+   como que "el programa dibujó mal", no como algo que el usuario hizo a
+   propósito.
+2. **De código, real**: `TrendLinePrimitive`, `MeasurePrimitive` y
+   `RegressionChannelPrimitive` leían sus puntos (`p1`/`p2` o
+   `fromTime`/`toTime`) desestructurados una sola vez, arriba de
+   `paneViews()`. Si algo movía esos valores después de creado el objeto,
+   la función `draw()` seguía usando los de siempre — porque los había
+   capturado por valor en ese momento, no una referencia viva al objeto.
+   No hacía falta para el modelo de "dos clics" (el objeto se creaba ya
+   con sus puntos finales), pero era la razón de fondo por la que un
+   dibujo que se moviera después de creado no iba a funcionar nunca.
+
+Los tres cambiaron a **clic, arrastrar, soltar** — como cualquier
+herramienta de dibujo real. Para eso:
+
+- Cada clase ahora expone `attached(param)` (lifecycle de
+  `ISeriesPrimitive` — Vercel/TradingView lo pasa solo al adjuntar el
+  objeto con `series.attachPrimitive()`) para guardarse `requestUpdate`, y
+  un método (`setPoints`/`setRange`) que cambia sus puntos Y llama a
+  `requestUpdate()` — sin eso, mover el punto mientras se arrastra no
+  repintaría nada, lightweight-charts no tiene forma de saber que algo
+  cambió si no se le avisa.
+- `draw()` ahora lee `primitive.p1`/`primitive.p2` (una referencia viva al
+  objeto, no una copia) en cada llamada, así que si `setPoints()` los
+  cambió hace un milisegundo, `draw()` ya ve el valor nuevo.
+- La interacción usa `chart.subscribeCrosshairMove()` (que ya trae la
+  conversión de píxel a tiempo/precio hecha) para seguir el cursor, y
+  `mousedown`/`mouseup` nativos del navegador solo para marcar cuándo
+  empieza y termina el arrastre — `mouseup` está en `window`, no en el
+  contenedor del gráfico, para que soltar el botón fuera del gráfico
+  también cierre el arrastre. Un arrastre demasiado corto (básicamente un
+  clic sin mover el mouse) se descarta en vez de dejar una línea de un
+  solo punto.
+- Horizontal se queda con un solo clic — ya era "libre" de por sí: el
+  usuario decide exactamente el precio con ese único clic, no hay nada que
+  arrastrar.
+
 ## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
 
 El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit

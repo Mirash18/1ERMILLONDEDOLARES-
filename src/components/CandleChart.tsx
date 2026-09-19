@@ -140,9 +140,16 @@ const PALETTES: Record<Theme, Palette> = {
 type DrawPoint = { time: UTCTimestamp; price: number };
 type DrawTool = "none" | "horizontal" | "trend" | "measure" | "regression";
 
-// Línea diagonal entre dos puntos — como la "Tendencia" de TradingView, sin
-// mangos para arrastrarla después de trazada (se borra y se vuelve a hacer).
+// Línea diagonal entre dos puntos — como la "Tendencia" de TradingView.
+// Libre de verdad: el usuario la traza con clic-arrastrar-soltar, viendo la
+// línea seguir el cursor en vivo (ver `setPoints`/`requestUpdate` — sin
+// esto, mover `p2` mientras se arrastra no repintaría nada, porque
+// `draw()` leería para siempre los valores que tenía el objeto en el
+// instante en que lightweight-charts llamó por primera vez a
+// `paneViews()`, no los que tiene ahora).
 class TrendLinePrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+
   constructor(
     private chart: IChartApi,
     private series: ISeriesApi<"Candlestick">,
@@ -151,13 +158,24 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
     private color: string = "#F5A623"
   ) {}
 
+  attached(param: { requestUpdate: () => void }): void {
+    this.requestUpdate = param.requestUpdate;
+  }
+
+  setPoints(p1: DrawPoint, p2: DrawPoint): void {
+    this.p1 = p1;
+    this.p2 = p2;
+    this.requestUpdate?.();
+  }
+
   paneViews(): ISeriesPrimitivePaneView[] {
-    const { chart, series, p1, p2, color } = this;
+    const primitive = this;
     return [
       {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
+              const { chart, series, p1, p2, color } = primitive;
               const x1 = chart.timeScale().timeToCoordinate(p1.time as unknown as Time);
               const y1 = series.priceToCoordinate(p1.price);
               const x2 = chart.timeScale().timeToCoordinate(p2.time as unknown as Time);
@@ -187,6 +205,8 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
 // que se borre a mano desde "Objetos" (acá no hay modo "mostrar solo
 // mientras se arrastra").
 class MeasurePrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+
   constructor(
     private chart: IChartApi,
     private series: ISeriesApi<"Candlestick">,
@@ -195,17 +215,29 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
     private barsBetween: number
   ) {}
 
-  paneViews(): ISeriesPrimitivePaneView[] {
-    const { chart, series, p1, p2, barsBetween } = this;
-    const subiendo = p2.price >= p1.price;
-    const color = subiendo ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
-    const fondo = subiendo ? "rgba(8,153,129,0.15)" : "rgba(242,54,69,0.15)";
+  attached(param: { requestUpdate: () => void }): void {
+    this.requestUpdate = param.requestUpdate;
+  }
 
+  setPoints(p1: DrawPoint, p2: DrawPoint, barsBetween: number): void {
+    this.p1 = p1;
+    this.p2 = p2;
+    this.barsBetween = barsBetween;
+    this.requestUpdate?.();
+  }
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const primitive = this;
     return [
       {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
+              const { chart, series, p1, p2, barsBetween } = primitive;
+              const subiendo = p2.price >= p1.price;
+              const color = subiendo ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
+              const fondo = subiendo ? "rgba(8,153,129,0.15)" : "rgba(242,54,69,0.15)";
+
               const x1 = chart.timeScale().timeToCoordinate(p1.time as unknown as Time);
               const y1 = series.priceToCoordinate(p1.price);
               const x2 = chart.timeScale().timeToCoordinate(p2.time as unknown as Time);
@@ -255,6 +287,8 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
 // puntos fijos — si llegan velas nuevas dentro del rango, el canal se ajusta
 // solo.
 class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+
   constructor(
     private chart: IChartApi,
     private series: ISeriesApi<"Candlestick">,
@@ -263,13 +297,24 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
     private getCandles: () => CandleSeries["candles"] | undefined
   ) {}
 
+  attached(param: { requestUpdate: () => void }): void {
+    this.requestUpdate = param.requestUpdate;
+  }
+
+  setRange(fromTime: UTCTimestamp, toTime: UTCTimestamp): void {
+    this.fromTime = fromTime;
+    this.toTime = toTime;
+    this.requestUpdate?.();
+  }
+
   paneViews(): ISeriesPrimitivePaneView[] {
-    const { chart, series, fromTime, toTime, getCandles } = this;
+    const primitive = this;
     return [
       {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
+              const { chart, series, fromTime, toTime, getCandles } = primitive;
               const candles = (getCandles() ?? []).filter(
                 (c) => c.time >= fromTime && c.time <= toTime
               );
@@ -771,13 +816,13 @@ function IndicatorsDropdown({
 // un botón para borrarla.
 // Menú de herramientas de dibujo — una sola activa a la vez (elegir otra, o
 // la misma de nuevo, apaga la anterior). El botón se queda resaltado
-// mientras la herramienta sigue activa esperando el clic (o los dos clics,
-// para tendencia/regla) que la va a dibujar.
+// mientras la herramienta sigue activa, esperando el clic (Horizontal) o el
+// arrastre (Tendencia/Regla/Regresión) que la va a dibujar.
 const DRAW_TOOLS = [
   { key: "horizontal" as const, label: "Horizontal", hint: "Un clic marca el precio" },
-  { key: "trend" as const, label: "Tendencia", hint: "Dos clics: inicio y fin" },
-  { key: "measure" as const, label: "Regla", hint: "Dos clics: mide precio y barras" },
-  { key: "regression" as const, label: "Regresión", hint: "Dos clics: elige el rango" },
+  { key: "trend" as const, label: "Tendencia", hint: "Clic, arrastra y suelta" },
+  { key: "measure" as const, label: "Regla", hint: "Clic, arrastra y suelta" },
+  { key: "regression" as const, label: "Regresión", hint: "Clic, arrastra y suelta" },
 ];
 
 function DrawToolsDropdown({
@@ -1113,8 +1158,8 @@ export function CandleChart({
   const [horizontalLines, setHorizontalLines] = useState<
     { id: string; price: number }[]
   >([]);
-  // Líneas de tendencia y mediciones — necesitan dos clics (ver
-  // pendingPointRef más abajo), por eso guardan los dos puntos.
+  // Líneas de tendencia y mediciones — se trazan con clic-arrastrar-soltar
+  // (ver dragStartRef más abajo), por eso guardan los dos puntos finales.
   const [trendLines, setTrendLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint }[]
   >([]);
@@ -1158,9 +1203,21 @@ export function CandleChart({
   // herramienta está activa en el momento del clic — el mismo patrón que
   // `dataRef` un poco más abajo.
   const drawToolRef = useRef<DrawTool>("none");
-  // Primer punto de una línea de tendencia, una regla o una regresión,
-  // mientras se espera el segundo clic — `null` cuando no hay uno pendiente.
-  const pendingPointRef = useRef<DrawPoint | null>(null);
+  // Punto de partida del arrastre (tendencia/regla/regresión) — se fija en
+  // el mousedown y se usa al soltar para crear el objeto definitivo.
+  const dragStartRef = useRef<DrawPoint | null>(null);
+  const isDraggingRef = useRef(false);
+  // Último punto bajo el cursor, actualizado en cada `subscribeCrosshairMove`
+  // — de ahí sale el punto de partida al presionar (no hace falta calcular
+  // coordenadas a mano en el mousedown) y el punto final mientras se
+  // arrastra.
+  const lastHoverPointRef = useRef<DrawPoint | null>(null);
+  // El dibujo "en vivo" que se ve mientras se arrastra — se reemplaza por
+  // uno definitivo (agregado a horizontalLines/trendLines/etc.) al soltar,
+  // o se descarta si el arrastre fue demasiado corto para ser intencional.
+  const liveTrendRef = useRef<TrendLinePrimitive | null>(null);
+  const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
+  const liveRegressionRef = useRef<RegressionChannelPrimitive | null>(null);
   // Copia siempre actualizada de `data`, para leerla desde callbacks creados
   // una sola vez (como el de resize) sin quedarse con datos viejos.
   const dataRef = useRef<CandleSeries | null>(null);
@@ -1331,52 +1388,131 @@ export function CandleChart({
     // para que la insignia se mantenga pegada al precio.
     chart.timeScale().subscribeVisibleLogicalRangeChange(updatePriceY);
 
-    // Modo dibujo: mientras hay una herramienta activa (ver los botones
-    // "Horizontal"/"Tendencia"/"Regla"), el clic dibuja en vez de solo mover
-    // el cursor — como el clic-para-colocar de TradingView, sin necesitar
-    // arrastrar nada. Tendencia y Regla necesitan dos clics: el primero solo
-    // guarda el punto de partida en `pendingPointRef`.
-    function onChartClick(param: {
+    // Modo dibujo — libre de verdad: clic, arrastrar, soltar, viendo la
+    // línea seguir el cursor todo el tiempo (como cualquier herramienta de
+    // dibujo real, no un "clic aquí, clic allá" desconectado donde el
+    // resultado puede sorprender). `subscribeCrosshairMove` hace el trabajo
+    // de convertir la posición del mouse en tiempo/precio — mousedown y
+    // mouseup del contenedor solo marcan cuándo empieza y termina el
+    // arrastre.
+    function onCrosshairMove(param: {
       point?: { x: number; y: number };
       time?: Time;
     }) {
+      const series = candleSeriesRef.current;
+      if (!param.point || !series) {
+        lastHoverPointRef.current = null;
+        return;
+      }
+      const price = series.coordinateToPrice(param.point.y);
+      if (price === null) {
+        lastHoverPointRef.current = null;
+        return;
+      }
+      const time = param.time ?? chart.timeScale().coordinateToTime(param.point.x);
+      if (time === null || time === undefined) {
+        lastHoverPointRef.current = null;
+        return;
+      }
+      const point: DrawPoint = { time: time as unknown as UTCTimestamp, price };
+      lastHoverPointRef.current = point;
+
+      if (!isDraggingRef.current || !dragStartRef.current) return;
+      const start = dragStartRef.current;
+      const tool = drawToolRef.current;
+      if (tool === "trend") {
+        liveTrendRef.current?.setPoints(start, point);
+      } else if (tool === "measure") {
+        const desde = Math.min(start.time, point.time);
+        const hasta = Math.max(start.time, point.time);
+        const bars = (dataRef.current?.candles ?? []).filter(
+          (c) => c.time >= desde && c.time <= hasta
+        ).length;
+        liveMeasureRef.current?.setPoints(start, point, bars);
+      } else if (tool === "regression") {
+        liveRegressionRef.current?.setRange(
+          Math.min(start.time, point.time) as UTCTimestamp,
+          Math.max(start.time, point.time) as UTCTimestamp
+        );
+      }
+    }
+    chart.subscribeCrosshairMove(onCrosshairMove);
+
+    function onMouseDown() {
       const tool = drawToolRef.current;
       const series = candleSeriesRef.current;
-      const chartApi = chartRef.current;
-      if (tool === "none" || !param.point || !series || !chartApi) return;
-
-      const price = series.coordinateToPrice(param.point.y);
-      if (price === null) return;
+      const start = lastHoverPointRef.current;
+      if (tool === "none" || !series || !start) return;
 
       if (tool === "horizontal") {
-        addHorizontalLine(price);
+        addHorizontalLine(start.price);
         setDrawTool("none");
         return;
       }
 
-      // Para tendencia/regla hace falta también el tiempo del clic — si no
-      // cayó justo sobre una vela, se calcula por posición en el eje.
-      const time =
-        param.time ?? chartApi.timeScale().coordinateToTime(param.point.x);
-      if (time === null || time === undefined) return;
-      const point: DrawPoint = { time: time as unknown as UTCTimestamp, price };
+      dragStartRef.current = start;
+      isDraggingRef.current = true;
 
-      if (!pendingPointRef.current) {
-        pendingPointRef.current = point;
-        return;
+      if (tool === "trend") {
+        const primitive = new TrendLinePrimitive(chart, series, start, start);
+        series.attachPrimitive(primitive);
+        liveTrendRef.current = primitive;
+      } else if (tool === "measure") {
+        const primitive = new MeasurePrimitive(chart, series, start, start, 0);
+        series.attachPrimitive(primitive);
+        liveMeasureRef.current = primitive;
+      } else if (tool === "regression") {
+        const primitive = new RegressionChannelPrimitive(
+          chart,
+          series,
+          start.time,
+          start.time,
+          () => dataRef.current?.candles
+        );
+        series.attachPrimitive(primitive);
+        liveRegressionRef.current = primitive;
       }
-      const p1 = pendingPointRef.current;
-      pendingPointRef.current = null;
-      if (tool === "trend") addTrendLine(p1, point);
-      else if (tool === "measure") addMeasure(p1, point);
-      else addRegression(p1.time, point.time);
+    }
+
+    function onMouseUp() {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      const tool = drawToolRef.current;
+      const start = dragStartRef.current;
+      const end = lastHoverPointRef.current;
+      dragStartRef.current = null;
+      const series = candleSeriesRef.current;
+
+      // Se descarta si el arrastre fue tan corto que no se ve distinto de
+      // un clic sin querer — mejor no dejar una línea de un solo punto.
+      const huboMovimiento =
+        !!start && !!end && (start.time !== end.time || start.price !== end.price);
+
+      if (tool === "trend" && liveTrendRef.current) {
+        if (series) series.detachPrimitive(liveTrendRef.current);
+        liveTrendRef.current = null;
+        if (huboMovimiento && start && end) addTrendLine(start, end);
+      } else if (tool === "measure" && liveMeasureRef.current) {
+        if (series) series.detachPrimitive(liveMeasureRef.current);
+        liveMeasureRef.current = null;
+        if (huboMovimiento && start && end) addMeasure(start, end);
+      } else if (tool === "regression" && liveRegressionRef.current) {
+        if (series) series.detachPrimitive(liveRegressionRef.current);
+        liveRegressionRef.current = null;
+        if (huboMovimiento && start && end) addRegression(start.time, end.time);
+      }
       setDrawTool("none");
     }
-    chart.subscribeClick(onChartClick);
+    containerRef.current.addEventListener("mousedown", onMouseDown);
+    // En `window`, no en el contenedor: si sueltan el botón fuera del
+    // gráfico (arrastraron hacia afuera) el arrastre igual debe terminar.
+    window.addEventListener("mouseup", onMouseUp);
 
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
-      chart.unsubscribeClick(onChartClick);
+      chart.unsubscribeCrosshairMove(onCrosshairMove);
+      containerRef.current?.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -1429,16 +1565,25 @@ export function CandleChart({
       for (const primitive of Object.values(regressionObjectsRef.current)) {
         series.detachPrimitive(primitive);
       }
+      // Por si el símbolo cambió a mitad de un arrastre (raro, pero
+      // posible) — se desprende también el dibujo "en vivo".
+      if (liveTrendRef.current) series.detachPrimitive(liveTrendRef.current);
+      if (liveMeasureRef.current) series.detachPrimitive(liveMeasureRef.current);
+      if (liveRegressionRef.current) series.detachPrimitive(liveRegressionRef.current);
     }
     horizontalLineObjectsRef.current = {};
     trendLineObjectsRef.current = {};
     measureObjectsRef.current = {};
     regressionObjectsRef.current = {};
+    liveTrendRef.current = null;
+    liveMeasureRef.current = null;
+    liveRegressionRef.current = null;
     setHorizontalLines([]);
     setTrendLines([]);
     setMeasureLines([]);
     setRegressionLines([]);
-    pendingPointRef.current = null;
+    dragStartRef.current = null;
+    isDraggingRef.current = false;
     setDrawTool("none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
@@ -1578,10 +1723,6 @@ export function CandleChart({
 
   useEffect(() => {
     drawToolRef.current = drawTool;
-    // Cambiar de herramienta (o apagarla) a mitad de una tendencia/regla
-    // descarta el primer clic ya dado — mejor eso que dibujar algo con un
-    // punto de una herramienta y otro de otra.
-    pendingPointRef.current = null;
   }, [drawTool]);
 
   // Fondos por día: se adjunta/desprende según el checkbox, en vez de
