@@ -163,7 +163,12 @@ type TextBoxState = {
   width: number;
   height: number;
   text: string;
+  fontSize: number;
+  align: "left" | "center";
 };
+
+const TEXT_BOX_MIN_FONT = 9;
+const TEXT_BOX_MAX_FONT = 28;
 
 // Qué tan cerca (en píxeles) hay que soltar el clic de un extremo ya
 // trazado para "agarrarlo" y moverlo, en vez de dibujar uno nuevo.
@@ -2153,13 +2158,44 @@ export function CandleChart({
     pendingFocusTextBoxIdRef.current = id;
     setTextBoxes((prev) => [
       ...prev,
-      { id, logical: point.logical, price: point.price, width: 160, height: 60, text: "" },
+      {
+        id,
+        logical: point.logical,
+        price: point.price,
+        width: 160,
+        height: 68,
+        text: "",
+        fontSize: 12,
+        align: "left",
+      },
     ]);
   }, []);
 
   const removeTextBox = useCallback((id: string) => {
     delete textBoxContentRefs.current[id];
     setTextBoxes((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  const setTextBoxFontSize = useCallback((id: string, delta: number) => {
+    setTextBoxes((prev) =>
+      prev.map((b) =>
+        b.id === id
+          ? {
+              ...b,
+              fontSize: Math.max(
+                TEXT_BOX_MIN_FONT,
+                Math.min(TEXT_BOX_MAX_FONT, b.fontSize + delta)
+              ),
+            }
+          : b
+      )
+    );
+  }, []);
+
+  const toggleTextBoxAlign = useCallback((id: string) => {
+    setTextBoxes((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, align: b.align === "center" ? "left" : "center" } : b))
+    );
   }, []);
 
   // Se llama en cada `onInput` del contentEditable — deliberadamente no se
@@ -2677,10 +2713,49 @@ export function CandleChart({
                 }}
               >
                 <div
-                  className="h-3 shrink-0 cursor-move"
+                  className="flex h-5 shrink-0 items-stretch"
                   style={{ backgroundColor: "rgba(245,166,35,0.55)" }}
-                  onMouseDown={(e) => startDragTextBox(e, box.id)}
-                />
+                >
+                  <div
+                    className="flex-1 cursor-move"
+                    onMouseDown={(e) => startDragTextBox(e, box.id)}
+                  />
+                  {/* Botones de la mini barra de herramientas: mousedown corta
+                      la propagación para no disparar el arrastre del cuadro
+                      (que escucha en el mismo mousedown), el onClick sí llega
+                      normal. */}
+                  <button
+                    type="button"
+                    title="Achicar letra"
+                    aria-label="Achicar letra"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setTextBoxFontSize(box.id, -2)}
+                    className="w-4 shrink-0 font-mono text-[9px] leading-none text-black/80 hover:bg-black/10"
+                  >
+                    A-
+                  </button>
+                  <button
+                    type="button"
+                    title="Agrandar letra"
+                    aria-label="Agrandar letra"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setTextBoxFontSize(box.id, 2)}
+                    className="w-4 shrink-0 font-mono text-[9px] leading-none text-black/80 hover:bg-black/10"
+                  >
+                    A+
+                  </button>
+                  <button
+                    type="button"
+                    title="Centrar texto"
+                    aria-label="Centrar texto"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => toggleTextBoxAlign(box.id)}
+                    className="w-4 shrink-0 font-mono text-[9px] leading-none text-black/80"
+                    style={{ backgroundColor: box.align === "center" ? "rgba(0,0,0,0.25)" : "transparent" }}
+                  >
+                    C
+                  </button>
+                </div>
                 <div
                   ref={(el) => {
                     if (el && textBoxContentRefs.current[box.id] !== el) {
@@ -2690,8 +2765,8 @@ export function CandleChart({
                   }}
                   contentEditable
                   suppressContentEditableWarning
-                  className="flex-1 overflow-auto px-1.5 py-1 font-mono text-xs text-white outline-none"
-                  style={{ wordBreak: "break-word" }}
+                  className="flex-1 overflow-auto px-1.5 py-1 font-mono text-white outline-none"
+                  style={{ wordBreak: "break-word", fontSize: box.fontSize, textAlign: box.align }}
                   onInput={(e) => commitTextBoxText(box.id, e.currentTarget.textContent ?? "")}
                   onMouseDown={(e) => e.stopPropagation()}
                 />

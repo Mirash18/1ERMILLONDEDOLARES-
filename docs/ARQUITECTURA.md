@@ -1210,6 +1210,15 @@ canvas — habría que reinventar un editor de texto a mano.
   seleccionando todo el texto por defecto, apenas termina de pintarse —
   para escribir de inmediato sin un clic extra.
 
+Después del primer pase Alejo pidió tres cositas más: centrar el texto y
+agrandar/achicar la letra. Se agregó `fontSize`/`align` a `TextBoxState`
+y una mini barra de tres botones (`A-`/`A+`/`C`) dentro de la misma
+franja naranja de arriba, a la izquierda del área de arrastre. Cada
+botón corta la propagación en su propio `mousedown` (no en `onClick`)
+para no disparar el arrastre del cuadro completo, que escucha ese mismo
+evento un nivel más arriba — el `onClick` sigue llegando normal porque
+solo se cortó la propagación, no el evento en sí.
+
 ## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
 
 El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit
