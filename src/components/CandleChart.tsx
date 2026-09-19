@@ -138,6 +138,7 @@ const PALETTES: Record<Theme, Palette> = {
 // ---------------------------------------------------------------------------
 
 type DrawPoint = { time: UTCTimestamp; price: number };
+type DrawTool = "none" | "horizontal" | "trend" | "measure" | "regression";
 
 // Línea diagonal entre dos puntos — como la "Tendencia" de TradingView, sin
 // mangos para arrastrarla después de trazada (se borra y se vuelve a hacer).
@@ -237,6 +238,181 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
                 context.fillStyle = subiendo ? "#089981" : "#F23645";
                 context.fillText(etiqueta, labelX + 4, labelY);
                 context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
+
+// Canal de regresión — línea de tendencia estadística (mínimos cuadrados
+// sobre el cierre de las velas del rango elegido) más dos bandas a ±2
+// desviaciones estándar de los residuos, como el "Regression Trend" de
+// TradingView. A diferencia de Tendencia/Regla, vuelve a calcular todo en
+// cada repintado a partir de las velas cargadas (`getCandles`) en vez de
+// puntos fijos — si llegan velas nuevas dentro del rango, el canal se ajusta
+// solo.
+class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
+  constructor(
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    private fromTime: UTCTimestamp,
+    private toTime: UTCTimestamp,
+    private getCandles: () => CandleSeries["candles"] | undefined
+  ) {}
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const { chart, series, fromTime, toTime, getCandles } = this;
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw(target: CanvasRenderingTarget2D) {
+              const candles = (getCandles() ?? []).filter(
+                (c) => c.time >= fromTime && c.time <= toTime
+              );
+              const n = candles.length;
+              if (n < 2) return;
+
+              let sumX = 0;
+              let sumY = 0;
+              let sumXY = 0;
+              let sumXX = 0;
+              candles.forEach((c, i) => {
+                sumX += i;
+                sumY += c.close;
+                sumXY += i * c.close;
+                sumXX += i * i;
+              });
+              const denom = n * sumXX - sumX * sumX;
+              if (denom === 0) return;
+              const m = (n * sumXY - sumX * sumY) / denom;
+              const b = (sumY - m * sumX) / n;
+
+              let sqResid = 0;
+              candles.forEach((c, i) => {
+                const pred = m * i + b;
+                sqResid += (c.close - pred) ** 2;
+              });
+              const width = Math.sqrt(sqResid / n) * 2;
+
+              const midStart = b;
+              const midEnd = m * (n - 1) + b;
+
+              const x1 = chart.timeScale().timeToCoordinate(candles[0].time as unknown as Time);
+              const x2 = chart
+                .timeScale()
+                .timeToCoordinate(candles[n - 1].time as unknown as Time);
+              const yMid1 = series.priceToCoordinate(midStart);
+              const yMid2 = series.priceToCoordinate(midEnd);
+              const yUp1 = series.priceToCoordinate(midStart + width);
+              const yUp2 = series.priceToCoordinate(midEnd + width);
+              const yLo1 = series.priceToCoordinate(midStart - width);
+              const yLo2 = series.priceToCoordinate(midEnd - width);
+              if (
+                x1 === null || x2 === null || yMid1 === null || yMid2 === null ||
+                yUp1 === null || yUp2 === null || yLo1 === null || yLo2 === null
+              ) {
+                return;
+              }
+
+              target.useMediaCoordinateSpace(({ context }) => {
+                context.save();
+
+                context.beginPath();
+                context.moveTo(x1, yUp1);
+                context.lineTo(x2, yUp2);
+                context.lineTo(x2, yLo2);
+                context.lineTo(x1, yLo1);
+                context.closePath();
+                context.fillStyle = "rgba(168,85,247,0.12)";
+                context.fill();
+
+                context.strokeStyle = "#A855F7";
+                context.lineWidth = 2;
+                context.beginPath();
+                context.moveTo(x1, yMid1);
+                context.lineTo(x2, yMid2);
+                context.stroke();
+
+                context.setLineDash([4, 3]);
+                context.lineWidth = 1;
+                context.beginPath();
+                context.moveTo(x1, yUp1);
+                context.lineTo(x2, yUp2);
+                context.stroke();
+                context.beginPath();
+                context.moveTo(x1, yLo1);
+                context.lineTo(x2, yLo2);
+                context.stroke();
+                context.setLineDash([]);
+
+                context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
+
+// Fondos alternados por día — puramente decorativo (lo que se veía en el
+// video de TradingView), para separar visualmente un día de mercado del
+// siguiente en los marcos intradía. Solo colorea los días "pares" (según su
+// número de día desde 1970) con un tinte dorado casi imperceptible; los
+// impares se dejan sin nada, así se ve la alternancia sin oscurecer el
+// gráfico. Se dibuja con `drawBackground` — la capa de fondo, siempre detrás
+// de las velas — así que no tapa nada.
+class DayBandsPrimitive implements ISeriesPrimitive<Time> {
+  constructor(
+    private chart: IChartApi,
+    private getCandles: () => CandleSeries["candles"] | undefined,
+    private isIntraday: () => boolean
+  ) {}
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const { chart, getCandles, isIntraday } = this;
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw() {
+              // Nada en la capa normal — todo el trabajo va en el fondo.
+            },
+            drawBackground(target: CanvasRenderingTarget2D) {
+              if (!isIntraday()) return;
+              const candles = getCandles();
+              if (!candles || candles.length === 0) return;
+              const timeScale = chart.timeScale();
+
+              target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+                let runStart = 0;
+                for (let i = 1; i <= candles.length; i++) {
+                  const cambioDeDia =
+                    i === candles.length ||
+                    Math.floor(candles[i].time / 86400) !==
+                      Math.floor(candles[runStart].time / 86400);
+                  if (!cambioDeDia) continue;
+
+                  const diaIndex = Math.floor(candles[runStart].time / 86400);
+                  if (diaIndex % 2 === 0) {
+                    const xStart = timeScale.timeToCoordinate(
+                      candles[runStart].time as unknown as Time
+                    );
+                    const xEnd =
+                      i < candles.length
+                        ? timeScale.timeToCoordinate(candles[i].time as unknown as Time)
+                        : mediaSize.width;
+                    if (xStart !== null && xEnd !== null) {
+                      context.fillStyle = "rgba(212,175,55,0.05)";
+                      context.fillRect(xStart, 0, xEnd - xStart, mediaSize.height);
+                    }
+                  }
+                  runStart = i;
+                }
               });
             },
           };
@@ -504,6 +680,8 @@ function IndicatorsDropdown({
   onToggleVolume,
   showBollinger,
   onToggleBollinger,
+  showDayBands,
+  onToggleDayBands,
   invertScale,
   onToggleInvert,
   palette,
@@ -512,6 +690,8 @@ function IndicatorsDropdown({
   onToggleVolume: () => void;
   showBollinger: boolean;
   onToggleBollinger: () => void;
+  showDayBands: boolean;
+  onToggleDayBands: () => void;
   invertScale: boolean;
   onToggleInvert: () => void;
   palette: Palette;
@@ -566,6 +746,14 @@ function IndicatorsDropdown({
           <label
             className="flex cursor-pointer items-center gap-2 px-3 py-2 font-mono text-xs"
             style={{ color: palette.buttonText }}
+            title="Solo en marcos intradía (5m a Hora) — separa un día de mercado del siguiente con un tinte apenas visible."
+          >
+            <input type="checkbox" checked={showDayBands} onChange={onToggleDayBands} />
+            Fondos por día
+          </label>
+          <label
+            className="flex cursor-pointer items-center gap-2 px-3 py-2 font-mono text-xs"
+            style={{ color: palette.buttonText }}
           >
             <input type="checkbox" checked={invertScale} onChange={onToggleInvert} />
             Invertir gráfico
@@ -589,6 +777,7 @@ const DRAW_TOOLS = [
   { key: "horizontal" as const, label: "Horizontal", hint: "Un clic marca el precio" },
   { key: "trend" as const, label: "Tendencia", hint: "Dos clics: inicio y fin" },
   { key: "measure" as const, label: "Regla", hint: "Dos clics: mide precio y barras" },
+  { key: "regression" as const, label: "Regresión", hint: "Dos clics: elige el rango" },
 ];
 
 function DrawToolsDropdown({
@@ -596,8 +785,8 @@ function DrawToolsDropdown({
   onSelect,
   palette,
 }: {
-  drawTool: "none" | "horizontal" | "trend" | "measure";
-  onSelect: (tool: "horizontal" | "trend" | "measure") => void;
+  drawTool: DrawTool;
+  onSelect: (tool: Exclude<DrawTool, "none">) => void;
   palette: Palette;
 }) {
   const [open, setOpen] = useState(false);
@@ -664,22 +853,28 @@ function DrawToolsDropdown({
 function ObjectsDropdown({
   showBollinger,
   showVolume,
+  showDayBands,
   horizontalLines,
   onRemoveHorizontalLine,
   trendLines,
   onRemoveTrendLine,
   measureLines,
   onRemoveMeasureLine,
+  regressionLines,
+  onRemoveRegressionLine,
   palette,
 }: {
   showBollinger: boolean;
   showVolume: boolean;
+  showDayBands: boolean;
   horizontalLines: { id: string; price: number }[];
   onRemoveHorizontalLine: (id: string) => void;
   trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
   onRemoveTrendLine: (id: string) => void;
   measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
   onRemoveMeasureLine: (id: string) => void;
+  regressionLines: { id: string; fromTime: UTCTimestamp; toTime: UTCTimestamp }[];
+  onRemoveRegressionLine: (id: string) => void;
   palette: Palette;
 }) {
   const [open, setOpen] = useState(false);
@@ -749,9 +944,19 @@ function ObjectsDropdown({
               Volumen
             </div>
           )}
+          {showDayBands && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 font-mono text-xs"
+              style={{ color: palette.buttonText }}
+            >
+              <span className="inline-block h-2.5 w-3" style={{ backgroundColor: "rgba(212,175,55,0.5)" }} />
+              Fondos por día
+            </div>
+          )}
           {horizontalLines.length === 0 &&
           trendLines.length === 0 &&
-          measureLines.length === 0 ? (
+          measureLines.length === 0 &&
+          regressionLines.length === 0 ? (
             <p
               className="border-t px-3 py-2 font-mono text-[11px] opacity-60"
               style={{ color: palette.textSoft, borderColor: palette.wrapperBorder }}
@@ -828,6 +1033,36 @@ function ObjectsDropdown({
                   </div>
                 );
               })}
+              {regressionLines.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center justify-between gap-2 border-t px-3 py-2 font-mono text-xs"
+                  style={{ color: palette.buttonText, borderColor: palette.wrapperBorder }}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-[2px] w-3" style={{ backgroundColor: "#A855F7" }} />
+                    Regresión (
+                    {new Date(l.fromTime * 1000).toLocaleDateString("es-CO", {
+                      day: "2-digit",
+                      month: "short",
+                    })}{" "}
+                    →{" "}
+                    {new Date(l.toTime * 1000).toLocaleDateString("es-CO", {
+                      day: "2-digit",
+                      month: "short",
+                    })}
+                    )
+                  </span>
+                  <button
+                    onClick={() => onRemoveRegressionLine(l.id)}
+                    style={{ color: palette.textSoft }}
+                    title="Borrar este canal de regresión"
+                    aria-label="Borrar este canal de regresión"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </>
           )}
         </div>
@@ -886,12 +1121,17 @@ export function CandleChart({
   const [measureLines, setMeasureLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
   >([]);
+  const [regressionLines, setRegressionLines] = useState<
+    { id: string; fromTime: UTCTimestamp; toTime: UTCTimestamp }[]
+  >([]);
   // Qué herramienta de dibujo está activa — "none" es el estado normal
   // (clics solo mueven el cursor). Con una herramienta activa, el próximo
-  // clic (o los próximos dos, para tendencia/regla) dibuja en vez de nada.
-  const [drawTool, setDrawTool] = useState<"none" | "horizontal" | "trend" | "measure">(
-    "none"
-  );
+  // clic (o los próximos dos, para tendencia/regla/regresión) dibuja en
+  // vez de nada.
+  const [drawTool, setDrawTool] = useState<DrawTool>("none");
+  // Fondos alternados por día (ver DayBandsPrimitive) — apagado por
+  // defecto, igual que Bollinger.
+  const [showDayBands, setShowDayBands] = useState(false);
 
   const palette = PALETTES[theme];
 
@@ -907,17 +1147,27 @@ export function CandleChart({
   const horizontalLineObjectsRef = useRef<Record<string, IPriceLine>>({});
   const trendLineObjectsRef = useRef<Record<string, TrendLinePrimitive>>({});
   const measureObjectsRef = useRef<Record<string, MeasurePrimitive>>({});
+  const regressionObjectsRef = useRef<Record<string, RegressionChannelPrimitive>>({});
+  // Se crea una sola vez (en el efecto que crea el gráfico) y se
+  // adjunta/desprende según `showDayBands` — a diferencia de los dibujos de
+  // arriba, no representa un punto fijo: lee las velas y el marco de tiempo
+  // en vivo (vía dataRef/timeframeRef) en cada repintado.
+  const dayBandsPrimitiveRef = useRef<DayBandsPrimitive | null>(null);
   // El clic del gráfico se suscribe una sola vez (mismo efecto que crea el
   // gráfico), así que necesita esta copia siempre actualizada para saber qué
   // herramienta está activa en el momento del clic — el mismo patrón que
   // `dataRef` un poco más abajo.
-  const drawToolRef = useRef<typeof drawTool>("none");
-  // Primer punto de una línea de tendencia o una regla, mientras se espera
-  // el segundo clic — `null` cuando no hay uno pendiente.
+  const drawToolRef = useRef<DrawTool>("none");
+  // Primer punto de una línea de tendencia, una regla o una regresión,
+  // mientras se espera el segundo clic — `null` cuando no hay uno pendiente.
   const pendingPointRef = useRef<DrawPoint | null>(null);
   // Copia siempre actualizada de `data`, para leerla desde callbacks creados
   // una sola vez (como el de resize) sin quedarse con datos viejos.
   const dataRef = useRef<CandleSeries | null>(null);
+  // Copia siempre actualizada de `timeframe` — la usa DayBandsPrimitive para
+  // saber si el marco actual es intradía sin tener que recrearse cada vez
+  // que se cambia de marco.
+  const timeframeRef = useRef<TimeframeKey>("1h");
   // Alto real del panel ahora mismo — fijo (CHART_HEIGHT) normalmente, pero
   // dinámico en la Sala de Trading (`fillHeight`). `clampBadgeTop` lo usa
   // para no dejar salir la insignia del panel real, sea cual sea su alto.
@@ -1051,6 +1301,11 @@ export function CandleChart({
     volumeSeriesRef.current = volumeSeries;
     bbUpperRef.current = bbUpper;
     bbLowerRef.current = bbLower;
+    dayBandsPrimitiveRef.current = new DayBandsPrimitive(
+      chart,
+      () => dataRef.current?.candles,
+      () => INTRADAY_TIMEFRAMES.has(timeframeRef.current)
+    );
 
     const resize = () => {
       if (containerRef.current) {
@@ -1113,7 +1368,8 @@ export function CandleChart({
       const p1 = pendingPointRef.current;
       pendingPointRef.current = null;
       if (tool === "trend") addTrendLine(p1, point);
-      else addMeasure(p1, point);
+      else if (tool === "measure") addMeasure(p1, point);
+      else addRegression(p1.time, point.time);
       setDrawTool("none");
     }
     chart.subscribeClick(onChartClick);
@@ -1151,11 +1407,13 @@ export function CandleChart({
     chartRef.current?.applyOptions({ watermark: { text: symbol } });
   }, [symbol]);
 
-  // Los dibujos (línea horizontal, tendencia, regla) se hacen a mano y no se
-  // guardan en ningún lado todavía (no hay dónde persistir dibujos por
-  // símbolo) — cambiar de símbolo los borra todos, para no dejar, por
-  // ejemplo, una línea de AAPL a $150 pegada encima de un gráfico de GLD
-  // que se mueve en otro rango de precio por completo.
+  // Los dibujos (línea horizontal, tendencia, regla, regresión) se hacen a
+  // mano y no se guardan en ningún lado todavía (no hay dónde persistir
+  // dibujos por símbolo) — cambiar de símbolo los borra todos, para no
+  // dejar, por ejemplo, una línea de AAPL a $150 pegada encima de un
+  // gráfico de GLD que se mueve en otro rango de precio por completo.
+  // Fondos por día NO se toca acá: no es un dibujo puntual sino un
+  // interruptor que se mantiene igual sin importar el símbolo.
   useEffect(() => {
     const series = candleSeriesRef.current;
     if (series) {
@@ -1168,13 +1426,18 @@ export function CandleChart({
       for (const primitive of Object.values(measureObjectsRef.current)) {
         series.detachPrimitive(primitive);
       }
+      for (const primitive of Object.values(regressionObjectsRef.current)) {
+        series.detachPrimitive(primitive);
+      }
     }
     horizontalLineObjectsRef.current = {};
     trendLineObjectsRef.current = {};
     measureObjectsRef.current = {};
+    regressionObjectsRef.current = {};
     setHorizontalLines([]);
     setTrendLines([]);
     setMeasureLines([]);
+    setRegressionLines([]);
     pendingPointRef.current = null;
     setDrawTool("none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1310,12 +1573,29 @@ export function CandleChart({
   }, [data]);
 
   useEffect(() => {
+    timeframeRef.current = timeframe;
+  }, [timeframe]);
+
+  useEffect(() => {
     drawToolRef.current = drawTool;
     // Cambiar de herramienta (o apagarla) a mitad de una tendencia/regla
     // descarta el primer clic ya dado — mejor eso que dibujar algo con un
     // punto de una herramienta y otro de otra.
     pendingPointRef.current = null;
   }, [drawTool]);
+
+  // Fondos por día: se adjunta/desprende según el checkbox, en vez de
+  // crearse y destruirse — el mismo objeto sirve para todos los símbolos y
+  // marcos de tiempo, porque lee las velas en vivo en cada repintado.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const primitive = dayBandsPrimitiveRef.current;
+    if (!series || !primitive) return;
+    if (showDayBands) {
+      series.attachPrimitive(primitive);
+      return () => series.detachPrimitive(primitive);
+    }
+  }, [showDayBands]);
 
   // Traza una línea horizontal nueva en `price`.
   const addHorizontalLine = useCallback((price: number) => {
@@ -1384,6 +1664,33 @@ export function CandleChart({
     if (series && primitive) series.detachPrimitive(primitive);
     delete measureObjectsRef.current[id];
     setMeasureLines((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
+  const addRegression = useCallback((t1: UTCTimestamp, t2: UTCTimestamp) => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return;
+    const fromTime = Math.min(t1, t2) as UTCTimestamp;
+    const toTime = Math.max(t1, t2) as UTCTimestamp;
+    const id = `${Date.now()}-${Math.random()}`;
+    const primitive = new RegressionChannelPrimitive(
+      chart,
+      series,
+      fromTime,
+      toTime,
+      () => dataRef.current?.candles
+    );
+    series.attachPrimitive(primitive);
+    regressionObjectsRef.current[id] = primitive;
+    setRegressionLines((prev) => [...prev, { id, fromTime, toTime }]);
+  }, []);
+
+  const removeRegression = useCallback((id: string) => {
+    const series = candleSeriesRef.current;
+    const primitive = regressionObjectsRef.current[id];
+    if (series && primitive) series.detachPrimitive(primitive);
+    delete regressionObjectsRef.current[id];
+    setRegressionLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
   // Pre-mercado / after-hours. Se refresca UNA VEZ POR HORA a propósito: el
@@ -1624,6 +1931,8 @@ export function CandleChart({
             onToggleVolume={() => setShowVolume((v) => !v)}
             showBollinger={showBollinger}
             onToggleBollinger={() => setShowBollinger((v) => !v)}
+            showDayBands={showDayBands}
+            onToggleDayBands={() => setShowDayBands((v) => !v)}
             invertScale={invertScale}
             onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
@@ -1636,12 +1945,15 @@ export function CandleChart({
           <ObjectsDropdown
             showBollinger={showBollinger}
             showVolume={showVolume}
+            showDayBands={showDayBands}
             horizontalLines={horizontalLines}
             onRemoveHorizontalLine={removeHorizontalLine}
             trendLines={trendLines}
             onRemoveTrendLine={removeTrendLine}
             measureLines={measureLines}
             onRemoveMeasureLine={removeMeasure}
+            regressionLines={regressionLines}
+            onRemoveRegressionLine={removeRegression}
             palette={palette}
           />
           {fillHeight && (

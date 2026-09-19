@@ -1015,6 +1015,41 @@ Ya en producción, completando casi toda la lista de la sección anterior:
   primitives (dibujar rectángulos de fondo por rango de tiempo), pero
   todavía no se ha hecho.
 
+## Canal de regresión y fondos por día (18 sept. 2026, misma tanda)
+
+Cierra casi toda la lista original de 15 puntos del video.
+
+- **Canal de regresión** (`RegressionChannelPrimitive`): cuarta herramienta
+  del menú "Dibujar" — dos clics eligen el rango, y a partir de ahí calcula
+  una regresión lineal (mínimos cuadrados) sobre el cierre de las velas
+  cargadas en ese rango, más dos bandas a ±2 desviaciones estándar de los
+  residuos (el mismo concepto que Bollinger, pero contra una línea de
+  tendencia en vez de una media simple). A propósito **no** guarda los
+  puntos calculados sino el rango de tiempo y una función `getCandles` —
+  así, si llegan velas nuevas dentro de ese rango (el marco intradía se
+  actualiza cada 5 min), el canal se recalcula solo en el próximo
+  repintado, en vez de quedar congelado con el cálculo del momento en que
+  se dibujó.
+- **Fondos por día** (`DayBandsPrimitive`, checkbox en "Indicadores"): al
+  repasar el video se cayó en cuenta de que lo que parecían "fondos de
+  sesión" (pre-mercado/regular/cierre) en realidad no se puede replicar
+  con datos reales — el plan gratuito de Twelve Data no trae velas de pre
+  y post mercado en el historial (`getCandles()`), solo la sesión regular,
+  así que un fondo por sesión se vería como un solo color de punta a
+  punta, sin ninguna alternancia. Se implementó en cambio lo que sí se
+  puede mostrar de verdad con los datos que hay: un tinte dorado casi
+  imperceptible alternado por **día de calendario**, para separar
+  visualmente un día de mercado del siguiente en los marcos intradía — el
+  mismo efecto visual de "franjas" del video, con datos reales en vez de
+  inventados. Se dibuja con `drawBackground` (capa detrás de las velas) y
+  solo aplica a marcos intradía (5m a Hora); en Día/Semana/Mes cada vela ya
+  es un día completo o más, así que alternar por día ahí sería rayar cada
+  vela por separado.
+
+Con esto, de las 15 cosas del video solo faltan **alertas de precio** y
+**compra/venta simulada** — los dos sistemas grandes que Alejo decidió
+dejar para una conversación aparte.
+
 ## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
 
 El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit
