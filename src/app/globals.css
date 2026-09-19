@@ -67,3 +67,32 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+
+/* Fondo de la portada pública (home) — azul + verde oliva con un patrón
+   sutil de puntos, como pidió Alejo tras comparar con un sitio de
+   referencia (ver docs/ARQUITECTURA.md). Vive en su propia clase, no en
+   :root, para no tocar --bg/--gold — la Sala de Trading y el resto del
+   sitio se quedan con su estética de terminal tal cual. */
+.hero-brand-bg {
+  position: relative;
+  background:
+    radial-gradient(60% 80% at 85% 0%, rgba(76, 143, 209, 0.28), transparent 60%),
+    radial-gradient(70% 60% at 8% 100%, rgba(124, 140, 74, 0.24), transparent 65%),
+    linear-gradient(160deg, #0a1420, #101d14 80%);
+  overflow: hidden;
+}
+.hero-brand-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, rgba(180, 200, 220, 0.55) 0, transparent 60%),
+    radial-gradient(1px 1px at 32% 68%, rgba(180, 200, 220, 0.4) 0, transparent 60%),
+    radial-gradient(1px 1px at 52% 30%, rgba(180, 200, 220, 0.5) 0, transparent 60%),
+    radial-gradient(1px 1px at 70% 55%, rgba(180, 200, 220, 0.4) 0, transparent 60%),
+    radial-gradient(1px 1px at 88% 15%, rgba(180, 200, 220, 0.5) 0, transparent 60%),
+    radial-gradient(1px 1px at 20% 85%, rgba(180, 200, 220, 0.35) 0, transparent 60%),
+    radial-gradient(1px 1px at 60% 88%, rgba(180, 200, 220, 0.35) 0, transparent 60%),
+    radial-gradient(1px 1px at 92% 70%, rgba(180, 200, 220, 0.4) 0, transparent 60%);
+  pointer-events: none;
+}

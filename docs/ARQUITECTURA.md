@@ -1245,6 +1245,50 @@ para que el dominio real (`1-ermillondedolares-in8t.vercel.app`) empiece a
 servirlo — si no, el sitio real sigue mostrando la versión anterior aunque
 el despliegue diga "Ready".
 
+## Rediseño visual — arranque: logo real y paleta azul/verde oliva (19 sept. 2026)
+
+Alejo pidió pasar a la parte gráfica del sitio: mandó un video de un
+sitio de referencia (seminario de otro economista) para inspirarse, y
+después el archivo real del logo — un oso y un toro dorados/bronce con
+un gráfico de velas esmeralda entre ambos, más el texto "1ER MILLÓN DE
+DÓLARES" en oro debajo.
+
+**Contradicción real que apareció al comparar**: en el video Alejo
+describió querer "un azul muy bonito, ese verde oliva" — pero el logo
+que mandó no tiene nada de azul, es oro + esmeralda. Antes de tocar
+código se armó un Artifact comparando las dos direcciones (oro/esmeralda
+del logo real vs. azul/oliva de su descripción) con el logo real puesto
+encima de cada una, para que eligiera viendo en vez de a ciegas. Eligió
+**azul + verde oliva** — es decir, el logo queda como una pieza dorada
+destacada sobre un fondo que no comparte sus colores, a propósito.
+
+**Implementado, alcance: solo el homepage público** (`src/app/page.tsx`),
+no toda la app:
+
+- `public/logo.png` (el archivo original, oso+toro+texto, fondo
+  transparente) y `public/logo-icon.png` (recortado solo al emblema,
+  sin el texto — el recorte se hizo detectando por código dónde
+  terminaba el ícono y empezaba el bloque de texto, no a mano) para el
+  logo compacto del header.
+- Nueva clase `.hero-brand-bg` en `globals.css` — **no** se tocaron los
+  tokens `--bg`/`--gold` de `:root`, que sigue usando el resto del sitio
+  (Sala de Trading, admin, etc.) para su estética de terminal oscura sin
+  cambios. El fondo nuevo (degradado azul marino → verde oliva oscuro,
+  más un patrón sutil de puntos vía `radial-gradient` repetidos, sin
+  librería ni canvas) vive en esa clase y solo se aplica a la sección
+  del hero del homepage.
+- Botón CTA nuevo ("Empezar en la academia" → `/introduccion`) en azul
+  (`#4c8fd1`), primer llamado a la acción real que tiene el homepage.
+
+**Pendiente de esta misma iniciativa** (siguiente conversación/tanda):
+secciones nuevas — qué incluye la suscripción, qué aprenderás,
+testimonios, ganancias semanales de alumnos — inspiradas en el sitio de
+referencia pero con contenido propio. Falta confirmar con Alejo si
+testimonios/ganancias arrancan vacíos hasta tener datos reales o con
+contenido de ejemplo mientras tanto (propuesto: vacíos, mismo criterio
+que ya se usó con `DayBandsPrimitive` de no fingir datos que no
+existen — pendiente de que él lo confirme).
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

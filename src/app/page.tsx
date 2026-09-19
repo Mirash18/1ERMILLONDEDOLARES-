@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { TickerStrip } from "@/components/TickerStrip";
 import { CandleChart } from "@/components/CandleChart";
@@ -23,8 +24,9 @@ export default function Home() {
     <div className="flex flex-1 flex-col bg-bg">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <span className="font-display text-lg tracking-tight text-text">
-            1er <span className="text-gold">Millón</span> de Dólares
+          <span className="flex items-center gap-2 whitespace-nowrap font-display text-lg tracking-tight text-text">
+            <Image src="/logo-icon.png" alt="" width={32} height={26} priority />
+            1er <span className="text-gold">Millón</span>&nbsp;de Dólares
           </span>
           <div className="flex items-center gap-5">
             <span className="hidden font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft sm:inline">
@@ -41,20 +43,28 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
-        <section className="mb-14">
-          <p className="mb-2 font-mono text-xs uppercase tracking-[0.14em] text-gold">
+      <section className="hero-brand-bg">
+        <div className="relative mx-auto w-full max-w-5xl px-6 py-16 sm:py-20">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
             Análisis, señales y educación
           </p>
-          <h1 className="max-w-2xl text-balance font-display text-4xl font-medium leading-tight text-text sm:text-5xl">
+          <h1 className="max-w-2xl text-balance font-display text-4xl font-medium leading-tight text-white sm:text-5xl">
             Aprende a leer el mercado antes de arriesgar tu capital.
           </h1>
-          <p className="mt-4 max-w-xl text-text-soft">
+          <p className="mt-4 max-w-xl text-[#c7d2c4]">
             Gráficos en vivo, herramientas de estudio y las clases del
             profesor Miguel Cortés, todo en un mismo lugar.
           </p>
-        </section>
+          <Link
+            href="/introduccion"
+            className="mt-7 inline-flex w-fit items-center rounded-md bg-[#4c8fd1] px-5 py-2.5 font-mono text-sm font-medium text-[#06111d] transition-colors hover:bg-[#5fa0e0]"
+          >
+            Empezar en la academia
+          </Link>
+        </div>
+      </section>
 
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
         <section className="mb-8">
           <TickerStrip />
         </section>
