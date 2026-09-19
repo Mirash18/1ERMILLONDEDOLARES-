@@ -1347,6 +1347,45 @@ vez por minuto — sin esto, la funcionalidad ENTERA de "ir subiendo
 testimonios" habría quedado rota en silencio, sin ningún error visible
 en build ni en runtime.
 
+## Bug real: subir un video de testimonio fallaba en producción (19 sept. 2026)
+
+Alejo probó `/admin/testimonios` en producción con un video real y le
+salió "no se pudo subir el archivo (¿está configurado el Blob store?)"
+— el Blob store sí estaba bien configurado, el problema era otro.
+
+La primera versión mandaba el archivo como `multipart/form-data` a un
+`POST` normal en `/api/admin/testimonials`, que lo recibía en el
+servidor y recién ahí lo subía a Blob. Eso funciona con imágenes chicas,
+pero **las Serverless Functions de Vercel rechazan cualquier cuerpo de
+petición de más de ~4.5 MB** — un límite de la plataforma, no algo que
+se pueda subir con configuración. Cualquier video real lo iba a superar
+siempre, sin importar el límite de 60 MB que el código intentaba
+permitir.
+
+Arreglo: subida **directa del navegador a Blob**, sin pasar por nuestro
+servidor en absoluto (`@vercel/blob/client`, función `upload()`):
+
+- `AdminTestimonialsManager` llama `upload()` con `handleUploadUrl:
+  "/api/admin/testimonials/upload"` y manda nombre/texto en
+  `clientPayload` (un string, no hay otro canal para pasar datos extra
+  junto con el archivo en este flujo).
+- La ruta nueva (`upload/route.ts`) usa `handleUpload` de
+  `@vercel/blob/client`: en `onBeforeGenerateToken` valida `isAdmin()` y
+  el tamaño máximo según el tipo de archivo (leído del `clientPayload`);
+  en `onUploadCompleted` — un webhook que Vercel Blob le pega a esta
+  misma ruta cuando el archivo YA terminó de subirse — recién ahí se
+  guarda el registro en Redis.
+- Como el registro real se crea de forma asíncrona (el webhook), el
+  navegador arma una versión "optimista" del testimonio para la lista
+  apenas `upload()` resuelve, en vez de esperar una respuesta que no va
+  a llegar por ese mismo camino.
+
+`onUploadCompleted` necesita que el despliegue sea alcanzable desde
+internet para que Vercel se lo pueda pegar — **no dispara en local**,
+mismo límite que ya se había aceptado para todo lo de Blob en este
+proyecto: la subida de punta a punta solo se puede probar en
+producción.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

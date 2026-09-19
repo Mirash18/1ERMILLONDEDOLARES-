@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import type { Testimonial } from "@/lib/testimonials";
 
 function formatFecha(ts: number): string {
@@ -30,30 +31,53 @@ export function AdminTestimonialsManager({
       setMensaje("Falta la imagen/video, el nombre o el testimonio.");
       return;
     }
+    const isVideo = file.type.startsWith("video/");
+    if (!isVideo && !file.type.startsWith("image/")) {
+      setMensaje("El archivo debe ser una imagen o un video.");
+      return;
+    }
+
     setWorking(true);
     setMensaje(null);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      form.set("name", name.trim());
-      form.set("text", text.trim());
-      const res = await fetch("/api/admin/testimonials", {
-        method: "POST",
-        body: form,
+      // Sube directo del navegador a Vercel Blob (no pasa por nuestro
+      // servidor) — un video normal ya supera el límite de ~4.5 MB que
+      // aceptan las Serverless Functions de Vercel para el cuerpo de una
+      // petición normal. El nombre/texto viajan en clientPayload y el
+      // registro real en Redis lo crea el webhook onUploadCompleted del
+      // lado del servidor (ver upload/route.ts) — por eso acá se agrega
+      // una versión "optimista" a la lista de inmediato, en vez de
+      // esperar la respuesta de ese webhook.
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/admin/testimonials/upload",
+        clientPayload: JSON.stringify({
+          name: name.trim(),
+          text: text.trim(),
+          mediaType: isVideo ? "video" : "image",
+        }),
       });
-      const json: { testimonial?: Testimonial; error?: string } = await res.json();
-      if (!res.ok || !json.testimonial) {
-        setMensaje(json.error ?? "No se pudo subir el testimonio.");
-        return;
-      }
-      setItems((prev) => [json.testimonial!, ...prev]);
+
+      setItems((prev) => [
+        {
+          id: `${Date.now()}-local`,
+          name: name.trim(),
+          text: text.trim(),
+          mediaUrl: blob.url,
+          mediaType: isVideo ? "video" : "image",
+          createdAt: Date.now(),
+        },
+        ...prev,
+      ]);
       setName("");
       setText("");
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       setMensaje("Testimonio agregado.");
-    } catch {
-      setMensaje("No se pudo subir el testimonio — intenta de nuevo.");
+    } catch (err) {
+      setMensaje(
+        err instanceof Error ? err.message : "No se pudo subir el testimonio — intenta de nuevo."
+      );
     } finally {
       setWorking(false);
     }
