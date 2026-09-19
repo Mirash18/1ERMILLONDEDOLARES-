@@ -12,6 +12,7 @@ import {
   type ISeriesPrimitive,
   type ISeriesPrimitivePaneRenderer,
   type ISeriesPrimitivePaneView,
+  type Logical,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -137,16 +138,34 @@ const PALETTES: Record<Theme, Palette> = {
 // abajo.
 // ---------------------------------------------------------------------------
 
-type DrawPoint = { time: UTCTimestamp; price: number };
+// Un punto de dibujo se guarda como posición LÓGICA (índice de barra, puede
+// tener decimales y ser negativo o mayor que la última vela) en vez de un
+// tiempo absoluto. Es lo que de verdad permite que un dibujo se pueda
+// colocar en cualquier parte del gráfico, incluyendo el espacio en blanco
+// después de la última vela (donde no hay ninguna vela real todavía): con
+// tiempo absoluto, `timeToCoordinate`/`coordinateToTime` devuelven `null`
+// fuera del rango de datos cargado — con posición lógica, `lightweight-
+// charts` sabe convertir de sobra hacia ambos lados sin necesitar una vela
+// real en esa posición.
+type DrawPoint = { logical: number; price: number };
 type DrawTool = "none" | "horizontal" | "trend" | "measure" | "regression";
+
+// Qué tan cerca (en píxeles) hay que soltar el clic de un extremo ya
+// trazado para "agarrarlo" y moverlo, en vez de dibujar uno nuevo.
+const HANDLE_HIT_RADIUS = 10;
+
+function logicalToX(chart: IChartApi, logical: number): number | null {
+  return chart.timeScale().logicalToCoordinate(logical as Logical);
+}
 
 // Línea diagonal entre dos puntos — como la "Tendencia" de TradingView.
 // Libre de verdad: el usuario la traza con clic-arrastrar-soltar, viendo la
-// línea seguir el cursor en vivo (ver `setPoints`/`requestUpdate` — sin
-// esto, mover `p2` mientras se arrastra no repintaría nada, porque
-// `draw()` leería para siempre los valores que tenía el objeto en el
-// instante en que lightweight-charts llamó por primera vez a
-// `paneViews()`, no los que tiene ahora).
+// línea seguir el cursor en vivo, y después puede volver a agarrar
+// cualquiera de sus dos extremos (los círculos en las puntas, siempre
+// visibles) y moverlo — ver `setPoints`/`requestUpdate`, sin esto mover
+// `p2` no repintaría nada, porque `draw()` leería para siempre los valores
+// que tenía el objeto en el instante en que lightweight-charts llamó por
+// primera vez a `paneViews()`, no los que tiene ahora.
 class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
 
@@ -168,6 +187,19 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  // `null` si el clic no cayó cerca de ningún extremo — si no, cuál de los
+  // dos ("p1" o "p2") para que quien llama sepa cuál mover.
+  hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    const { chart, series, p1, p2 } = this;
+    for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
+      const px = logicalToX(chart, p.logical);
+      const py = series.priceToCoordinate(p.price);
+      if (px === null || py === null) continue;
+      if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
+    }
+    return null;
+  }
+
   paneViews(): ISeriesPrimitivePaneView[] {
     const primitive = this;
     return [
@@ -176,9 +208,9 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
           return {
             draw(target: CanvasRenderingTarget2D) {
               const { chart, series, p1, p2, color } = primitive;
-              const x1 = chart.timeScale().timeToCoordinate(p1.time as unknown as Time);
+              const x1 = logicalToX(chart, p1.logical);
               const y1 = series.priceToCoordinate(p1.price);
-              const x2 = chart.timeScale().timeToCoordinate(p2.time as unknown as Time);
+              const x2 = logicalToX(chart, p2.logical);
               const y2 = series.priceToCoordinate(p2.price);
               if (x1 === null || y1 === null || x2 === null || y2 === null) return;
               target.useMediaCoordinateSpace(({ context }) => {
@@ -189,6 +221,14 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
                 context.moveTo(x1, y1);
                 context.lineTo(x2, y2);
                 context.stroke();
+                {
+                  context.fillStyle = color;
+                  for (const [px, py] of [[x1, y1], [x2, y2]] as const) {
+                    context.beginPath();
+                    context.arc(px, py, 5, 0, Math.PI * 2);
+                    context.fill();
+                  }
+                }
                 context.restore();
               });
             },
@@ -200,10 +240,10 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
 }
 
 // Regla de medición — un rectángulo semitransparente entre dos puntos, con
-// una etiqueta mostrando la diferencia de precio, el % y cuántas velas hay de
-// por medio. Igual que la "regla" de TradingView, pero queda dibujada hasta
-// que se borre a mano desde "Objetos" (acá no hay modo "mostrar solo
-// mientras se arrastra").
+// una etiqueta mostrando la diferencia de precio, el % y cuántas velas hay
+// de por medio. Igual que la "regla" de TradingView: se traza libre y
+// después se puede seguir agarrando de cualquiera de sus dos esquinas para
+// ajustarla, sin tener que borrarla y volver a empezar.
 class MeasurePrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
 
@@ -212,7 +252,7 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
     private series: ISeriesApi<"Candlestick">,
     public p1: DrawPoint,
     public p2: DrawPoint,
-    private barsBetween: number
+    public barsBetween: number
   ) {}
 
   attached(param: { requestUpdate: () => void }): void {
@@ -224,6 +264,17 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
     this.p2 = p2;
     this.barsBetween = barsBetween;
     this.requestUpdate?.();
+  }
+
+  hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    const { chart, series, p1, p2 } = this;
+    for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
+      const px = logicalToX(chart, p.logical);
+      const py = series.priceToCoordinate(p.price);
+      if (px === null || py === null) continue;
+      if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
+    }
+    return null;
   }
 
   paneViews(): ISeriesPrimitivePaneView[] {
@@ -238,9 +289,9 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
               const color = subiendo ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
               const fondo = subiendo ? "rgba(8,153,129,0.15)" : "rgba(242,54,69,0.15)";
 
-              const x1 = chart.timeScale().timeToCoordinate(p1.time as unknown as Time);
+              const x1 = logicalToX(chart, p1.logical);
               const y1 = series.priceToCoordinate(p1.price);
-              const x2 = chart.timeScale().timeToCoordinate(p2.time as unknown as Time);
+              const x2 = logicalToX(chart, p2.logical);
               const y2 = series.priceToCoordinate(p2.price);
               if (x1 === null || y1 === null || x2 === null || y2 === null) return;
 
@@ -262,6 +313,13 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
                 context.strokeStyle = color;
                 context.lineWidth = 1;
                 context.strokeRect(left, top, right - left, bottom - top);
+
+                context.fillStyle = color;
+                for (const [px, py] of [[x1, y1], [x2, y2]] as const) {
+                  context.beginPath();
+                  context.arc(px, py, 5, 0, Math.PI * 2);
+                  context.fill();
+                }
 
                 context.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
                 const textWidth = context.measureText(etiqueta).width;
@@ -292,8 +350,12 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
   constructor(
     private chart: IChartApi,
     private series: ISeriesApi<"Candlestick">,
-    private fromTime: UTCTimestamp,
-    private toTime: UTCTimestamp,
+    // Rango en posición lógica (índice de barra), no en tiempo — igual que
+    // los puntos de Tendencia/Regla, para poder elegir el rango libremente
+    // incluso más allá de la última vela cargada. Al calcular la regresión
+    // se recorta a las velas reales que sí existen (`Math.round` + clamp).
+    private fromLogical: number,
+    private toLogical: number,
     private getCandles: () => CandleSeries["candles"] | undefined
   ) {}
 
@@ -301,9 +363,9 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = param.requestUpdate;
   }
 
-  setRange(fromTime: UTCTimestamp, toTime: UTCTimestamp): void {
-    this.fromTime = fromTime;
-    this.toTime = toTime;
+  setRange(fromLogical: number, toLogical: number): void {
+    this.fromLogical = fromLogical;
+    this.toLogical = toLogical;
     this.requestUpdate?.();
   }
 
@@ -314,10 +376,11 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
-              const { chart, series, fromTime, toTime, getCandles } = primitive;
-              const candles = (getCandles() ?? []).filter(
-                (c) => c.time >= fromTime && c.time <= toTime
-              );
+              const { chart, series, fromLogical, toLogical, getCandles } = primitive;
+              const all = getCandles() ?? [];
+              const i1 = Math.max(0, Math.round(Math.min(fromLogical, toLogical)));
+              const i2 = Math.min(all.length - 1, Math.round(Math.max(fromLogical, toLogical)));
+              const candles = i2 >= i1 ? all.slice(i1, i2 + 1) : [];
               const n = candles.length;
               if (n < 2) return;
 
@@ -346,10 +409,8 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
               const midStart = b;
               const midEnd = m * (n - 1) + b;
 
-              const x1 = chart.timeScale().timeToCoordinate(candles[0].time as unknown as Time);
-              const x2 = chart
-                .timeScale()
-                .timeToCoordinate(candles[n - 1].time as unknown as Time);
+              const x1 = logicalToX(chart, i1);
+              const x2 = logicalToX(chart, i2);
               const yMid1 = series.priceToCoordinate(midStart);
               const yMid2 = series.priceToCoordinate(midEnd);
               const yUp1 = series.priceToCoordinate(midStart + width);
@@ -918,7 +979,7 @@ function ObjectsDropdown({
   onRemoveTrendLine: (id: string) => void;
   measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
   onRemoveMeasureLine: (id: string) => void;
-  regressionLines: { id: string; fromTime: UTCTimestamp; toTime: UTCTimestamp }[];
+  regressionLines: { id: string; fromLogical: number; toLogical: number }[];
   onRemoveRegressionLine: (id: string) => void;
   palette: Palette;
 }) {
@@ -1086,17 +1147,7 @@ function ObjectsDropdown({
                 >
                   <span className="flex items-center gap-2">
                     <span className="inline-block h-[2px] w-3" style={{ backgroundColor: "#A855F7" }} />
-                    Regresión (
-                    {new Date(l.fromTime * 1000).toLocaleDateString("es-CO", {
-                      day: "2-digit",
-                      month: "short",
-                    })}{" "}
-                    →{" "}
-                    {new Date(l.toTime * 1000).toLocaleDateString("es-CO", {
-                      day: "2-digit",
-                      month: "short",
-                    })}
-                    )
+                    Regresión ({Math.abs(Math.round(l.toLogical - l.fromLogical))} barras)
                   </span>
                   <button
                     onClick={() => onRemoveRegressionLine(l.id)}
@@ -1167,7 +1218,7 @@ export function CandleChart({
     { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
   >([]);
   const [regressionLines, setRegressionLines] = useState<
-    { id: string; fromTime: UTCTimestamp; toTime: UTCTimestamp }[]
+    { id: string; fromLogical: number; toLogical: number }[]
   >([]);
   // Qué herramienta de dibujo está activa — "none" es el estado normal
   // (clics solo mueven el cursor). Con una herramienta activa, el próximo
@@ -1212,6 +1263,20 @@ export function CandleChart({
   // coordenadas a mano en el mousedown) y el punto final mientras se
   // arrastra.
   const lastHoverPointRef = useRef<DrawPoint | null>(null);
+  // Copia en píxeles del mismo punto (no lógica/precio) — la necesita el
+  // hit-test de los tiradores (hitTestHandle), que compara contra las
+  // coordenadas de pantalla donde se dibujan los círculos, no contra valores
+  // lógicos.
+  const lastHoverPixelRef = useRef<{ x: number; y: number } | null>(null);
+  // Cuando el cursor agarra el tirador de una tendencia/regla YA dibujada
+  // (drawTool en "none" pero mousedown cayó sobre un círculo) — mueve ESE
+  // punto en vez de dibujar uno nuevo. Es lo que permite "subir o bajar" una
+  // línea después de trazada, no solo trazarla una vez.
+  const editingRef = useRef<{
+    kind: "trend" | "measure";
+    id: string;
+    handle: "p1" | "p2";
+  } | null>(null);
   // El dibujo "en vivo" que se ve mientras se arrastra — se reemplaza por
   // uno definitivo (agregado a horizontalLines/trendLines/etc.) al soltar,
   // o se descarta si el arrastre fue demasiado corto para ser intencional.
@@ -1402,20 +1467,46 @@ export function CandleChart({
       const series = candleSeriesRef.current;
       if (!param.point || !series) {
         lastHoverPointRef.current = null;
+        lastHoverPixelRef.current = null;
         return;
       }
       const price = series.coordinateToPrice(param.point.y);
-      if (price === null) {
+      const logical = chart.timeScale().coordinateToLogical(param.point.x);
+      if (price === null || logical === null) {
         lastHoverPointRef.current = null;
+        lastHoverPixelRef.current = null;
         return;
       }
-      const time = param.time ?? chart.timeScale().coordinateToTime(param.point.x);
-      if (time === null || time === undefined) {
-        lastHoverPointRef.current = null;
-        return;
-      }
-      const point: DrawPoint = { time: time as unknown as UTCTimestamp, price };
+      const point: DrawPoint = { logical, price };
       lastHoverPointRef.current = point;
+      lastHoverPixelRef.current = { x: param.point.x, y: param.point.y };
+
+      // Arrastrando el tirador de un dibujo YA existente (ver editingRef) -
+      // manda sobre dibujar uno nuevo, aunque en la práctica no compiten
+      // porque esto solo se arma con drawTool en "none".
+      const editing = editingRef.current;
+      if (editing) {
+        if (editing.kind === "trend") {
+          const primitive = trendLineObjectsRef.current[editing.id];
+          if (primitive) {
+            const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
+            primitive.setPoints(
+              editing.handle === "p1" ? point : other,
+              editing.handle === "p1" ? other : point
+            );
+          }
+        } else if (editing.kind === "measure") {
+          const primitive = measureObjectsRef.current[editing.id];
+          if (primitive) {
+            const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
+            const p1 = editing.handle === "p1" ? point : other;
+            const p2 = editing.handle === "p1" ? other : point;
+            const bars = Math.abs(Math.round(p2.logical) - Math.round(p1.logical));
+            primitive.setPoints(p1, p2, bars);
+          }
+        }
+        return;
+      }
 
       if (!isDraggingRef.current || !dragStartRef.current) return;
       const start = dragStartRef.current;
@@ -1423,17 +1514,10 @@ export function CandleChart({
       if (tool === "trend") {
         liveTrendRef.current?.setPoints(start, point);
       } else if (tool === "measure") {
-        const desde = Math.min(start.time, point.time);
-        const hasta = Math.max(start.time, point.time);
-        const bars = (dataRef.current?.candles ?? []).filter(
-          (c) => c.time >= desde && c.time <= hasta
-        ).length;
+        const bars = Math.abs(Math.round(point.logical) - Math.round(start.logical));
         liveMeasureRef.current?.setPoints(start, point, bars);
       } else if (tool === "regression") {
-        liveRegressionRef.current?.setRange(
-          Math.min(start.time, point.time) as UTCTimestamp,
-          Math.max(start.time, point.time) as UTCTimestamp
-        );
+        liveRegressionRef.current?.setRange(start.logical, point.logical);
       }
     }
     chart.subscribeCrosshairMove(onCrosshairMove);
@@ -1441,8 +1525,36 @@ export function CandleChart({
     function onMouseDown() {
       const tool = drawToolRef.current;
       const series = candleSeriesRef.current;
+
+      // Sin herramienta activa: el único clic que hace algo es sobre el
+      // tirador de una tendencia/regla ya dibujada, para agarrarla y
+      // moverla. Se desactiva el paneo/zoom del gráfico mientras dura el
+      // arrastre, si no cada intento de mover el punto también arrastraría
+      // el gráfico entero por debajo.
+      if (tool === "none") {
+        const pixel = lastHoverPixelRef.current;
+        if (!pixel) return;
+        for (const [id, primitive] of Object.entries(trendLineObjectsRef.current)) {
+          const handle = primitive.hitTestHandle(pixel.x, pixel.y);
+          if (handle) {
+            editingRef.current = { kind: "trend", id, handle };
+            chart.applyOptions({ handleScroll: false, handleScale: false });
+            return;
+          }
+        }
+        for (const [id, primitive] of Object.entries(measureObjectsRef.current)) {
+          const handle = primitive.hitTestHandle(pixel.x, pixel.y);
+          if (handle) {
+            editingRef.current = { kind: "measure", id, handle };
+            chart.applyOptions({ handleScroll: false, handleScale: false });
+            return;
+          }
+        }
+        return;
+      }
+
       const start = lastHoverPointRef.current;
-      if (tool === "none" || !series || !start) return;
+      if (!series || !start) return;
 
       if (tool === "horizontal") {
         addHorizontalLine(start.price);
@@ -1465,8 +1577,8 @@ export function CandleChart({
         const primitive = new RegressionChannelPrimitive(
           chart,
           series,
-          start.time,
-          start.time,
+          start.logical,
+          start.logical,
           () => dataRef.current?.candles
         );
         series.attachPrimitive(primitive);
@@ -1475,6 +1587,36 @@ export function CandleChart({
     }
 
     function onMouseUp() {
+      // Se estaba arrastrando el tirador de un dibujo existente, no
+      // dibujando uno nuevo: confirma la posición final en el estado de
+      // React (para que el panel de Objetos y cualquier futura persistencia
+      // queden al día) y reactiva el paneo/zoom del gráfico.
+      const editing = editingRef.current;
+      if (editing) {
+        editingRef.current = null;
+        chart.applyOptions({ handleScroll: true, handleScale: true });
+        if (editing.kind === "trend") {
+          const primitive = trendLineObjectsRef.current[editing.id];
+          if (primitive) {
+            const { p1, p2 } = primitive;
+            setTrendLines((prev) =>
+              prev.map((l) => (l.id === editing.id ? { ...l, p1, p2 } : l))
+            );
+          }
+        } else if (editing.kind === "measure") {
+          const primitive = measureObjectsRef.current[editing.id];
+          if (primitive) {
+            const { p1, p2, barsBetween } = primitive;
+            setMeasureLines((prev) =>
+              prev.map((l) =>
+                l.id === editing.id ? { ...l, p1, p2, bars: barsBetween } : l
+              )
+            );
+          }
+        }
+        return;
+      }
+
       if (!isDraggingRef.current) return;
       isDraggingRef.current = false;
       const tool = drawToolRef.current;
@@ -1486,7 +1628,7 @@ export function CandleChart({
       // Se descarta si el arrastre fue tan corto que no se ve distinto de
       // un clic sin querer — mejor no dejar una línea de un solo punto.
       const huboMovimiento =
-        !!start && !!end && (start.time !== end.time || start.price !== end.price);
+        !!start && !!end && (start.logical !== end.logical || start.price !== end.price);
 
       if (tool === "trend" && liveTrendRef.current) {
         if (series) series.detachPrimitive(liveTrendRef.current);
@@ -1499,7 +1641,7 @@ export function CandleChart({
       } else if (tool === "regression" && liveRegressionRef.current) {
         if (series) series.detachPrimitive(liveRegressionRef.current);
         liveRegressionRef.current = null;
-        if (huboMovimiento && start && end) addRegression(start.time, end.time);
+        if (huboMovimiento && start && end) addRegression(start.logical, end.logical);
       }
       setDrawTool("none");
     }
@@ -1584,6 +1726,13 @@ export function CandleChart({
     setRegressionLines([]);
     dragStartRef.current = null;
     isDraggingRef.current = false;
+    // Por si el símbolo cambió a mitad de un arrastre de un tirador (mismo
+    // caso raro de arriba) — si no se limpia, el paneo/zoom del gráfico
+    // quedaría desactivado hasta el próximo mouseup.
+    if (editingRef.current) {
+      chartRef.current?.applyOptions({ handleScroll: true, handleScale: true });
+      editingRef.current = null;
+    }
     setDrawTool("none");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
@@ -1788,10 +1937,7 @@ export function CandleChart({
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return;
-    const candles = dataRef.current?.candles ?? [];
-    const desde = Math.min(p1.time, p2.time);
-    const hasta = Math.max(p1.time, p2.time);
-    const bars = candles.filter((c) => c.time >= desde && c.time <= hasta).length;
+    const bars = Math.abs(Math.round(p2.logical) - Math.round(p1.logical));
     const id = `${Date.now()}-${Math.random()}`;
     const primitive = new MeasurePrimitive(chart, series, p1, p2, bars);
     series.attachPrimitive(primitive);
@@ -1807,23 +1953,23 @@ export function CandleChart({
     setMeasureLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
-  const addRegression = useCallback((t1: UTCTimestamp, t2: UTCTimestamp) => {
+  const addRegression = useCallback((logical1: number, logical2: number) => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return;
-    const fromTime = Math.min(t1, t2) as UTCTimestamp;
-    const toTime = Math.max(t1, t2) as UTCTimestamp;
+    const fromLogical = Math.min(logical1, logical2);
+    const toLogical = Math.max(logical1, logical2);
     const id = `${Date.now()}-${Math.random()}`;
     const primitive = new RegressionChannelPrimitive(
       chart,
       series,
-      fromTime,
-      toTime,
+      fromLogical,
+      toLogical,
       () => dataRef.current?.candles
     );
     series.attachPrimitive(primitive);
     regressionObjectsRef.current[id] = primitive;
-    setRegressionLines((prev) => [...prev, { id, fromTime, toTime }]);
+    setRegressionLines((prev) => [...prev, { id, fromLogical, toLogical }]);
   }, []);
 
   const removeRegression = useCallback((id: string) => {

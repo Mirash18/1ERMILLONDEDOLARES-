@@ -1097,6 +1097,63 @@ herramienta de dibujo real. Para eso:
   usuario decide exactamente el precio con ese único clic, no hay nada que
   arrastrar.
 
+## Tendencia/Regla: posición lógica en vez de tiempo, y editables después de trazadas (19 sept. 2026)
+
+El arreglo de clic-arrastrar-soltar de arriba resolvió la UX pero dejó dos
+cosas sueltas que Alejo señaló con un segundo video comparando contra
+TradingView: (1) sus tirones "libres" pueden terminar en el espacio en
+blanco después de la última vela, y los míos no podían, y (2) en
+TradingView una línea ya trazada se puede volver a agarrar de cualquiera
+de sus dos puntas para subirla o bajarla, sin borrar y repetir.
+
+**Causa real de (1)**: los puntos se guardaban como `UTCTimestamp` (tiempo
+absoluto), y `chart.timeScale().timeToCoordinate()` /
+`coordinateToTime()` devuelven `null` fuera del rango de tiempo de las
+velas realmente cargadas. No es un límite arbitrario del código, es cómo
+funciona `lightweight-charts`: sin una vela real en ese tiempo, no hay
+tiempo que convertir. El espacio en blanco después de la última vela
+(donde SÍ se puede dibujar en TradingView) queda fuera de ese rango por
+definición.
+
+**Arreglo**: `DrawPoint` pasó de `{ time, price }` a `{ logical, price }`
+— posición lógica (índice de barra, puede tener decimales y salirse del
+rango 0..última vela) en vez de tiempo absoluto. `chart.timeScale()` sabe
+convertir posición lógica a píxel (`logicalToCoordinate`) y viceversa
+(`coordinateToLogical`) extrapolando en línea recta hacia ambos lados,
+sin necesitar una vela real ahí — por eso sí funciona en el espacio en
+blanco. `TrendLinePrimitive`, `MeasurePrimitive` y
+`RegressionChannelPrimitive` (y el helper nuevo `logicalToX`) usan esta
+conversión en vez de la de tiempo; `RegressionChannelPrimitive`
+puntualmente recorta el rango lógico a las velas que sí existen
+(`Math.round` + clamp contra `getCandles().length`) antes de calcular la
+regresión, porque ese cálculo sí necesita datos reales, no solo una
+posición en el eje.
+
+**Arreglo de (2)** — editar después de trazado: cada primitivo ya sabía
+dibujar círculos en sus extremos; se les agregó `hitTestHandle(x, y)`
+(distancia en píxeles contra cada punta, `HANDLE_HIT_RADIUS = 10`) para
+saber si un clic cayó sobre una de ellas. La interacción, en el mismo
+`mousedown`/`subscribeCrosshairMove`/`mouseup` que ya existía:
+
+- `mousedown` con `drawTool` en `"none"` (no se está dibujando nada
+  nuevo) recorre las tendencias y reglas ya trazadas (`trendLineObjectsRef`
+  / `measureObjectsRef`) llamando `hitTestHandle` con la última posición
+  conocida del cursor. Si golpea una, guarda en `editingRef` cuál
+  primitivo y cuál punta (`p1`/`p2`), y apaga `handleScroll`/`handleScale`
+  del gráfico — si no, cada intento de mover la punta también arrastraría
+  el gráfico entero por debajo.
+- Mientras `editingRef` está activo, `onCrosshairMove` mueve esa punta
+  específica (`setPoints`) en cada frame en vez de tratar el movimiento
+  como un dibujo nuevo — el mismo repintado en vivo que ya tenía el
+  dibujo inicial, pero sobre un objeto existente.
+- `mouseup` confirma la posición final de vuelta en el estado de React
+  (`trendLines`/`measureLines`, lo que ve el panel de Objetos) y
+  reactiva `handleScroll`/`handleScale`.
+
+Deliberadamente no se tocó: líneas horizontales (un solo clic ya elige el
+precio exacto, no aplica) y el canal de regresión (el usuario solo pidió
+esto para Tendencia y Regla en el video).
+
 ## Incidente: push que no disparó el despliegue automático (18 sept. 2026)
 
 El `git push` de la tanda de tendencia/regla llegó bien a GitHub (commit
