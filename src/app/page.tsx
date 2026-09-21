@@ -1,8 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { TickerStrip } from "@/components/TickerStrip";
 import { CandleChart } from "@/components/CandleChart";
-import { AuthStatus } from "@/components/AuthStatus";
+import { SiteHeader } from "@/components/SiteHeader";
 import { TestimonialsMarquee } from "@/components/TestimonialsMarquee";
 import { getTestimonials } from "@/lib/testimonials";
 
@@ -33,26 +32,7 @@ export default async function Home() {
 
   return (
     <div className="flex flex-1 flex-col bg-bg">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <span className="flex items-center gap-2 whitespace-nowrap font-display text-lg tracking-tight text-text">
-            <Image src="/logo-icon.png" alt="" width={32} height={26} priority />
-            1er <span className="text-gold">Millón</span>&nbsp;de Dólares
-          </span>
-          <div className="flex items-center gap-5">
-            <span className="hidden font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft sm:inline">
-              en construcción · fase 1
-            </span>
-            <Link
-              href="/sala-de-trading"
-              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
-            >
-              Sala de Trading
-            </Link>
-            <AuthStatus />
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <section className="hero-brand-bg">
         <div className="relative mx-auto w-full max-w-5xl px-6 py-16 sm:py-20">
