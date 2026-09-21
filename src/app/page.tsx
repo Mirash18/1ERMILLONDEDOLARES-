@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { TickerStrip } from "@/components/TickerStrip";
 import { CandleChart } from "@/components/CandleChart";
@@ -34,7 +35,27 @@ export default async function Home() {
     <div className="flex flex-1 flex-col bg-bg">
       <SiteHeader />
 
-      <section className="hero-brand-bg">
+      <section className="hero-brand-bg relative overflow-hidden">
+        {/* A diferencia del fondo de testimonios, este SÍ lleva `priority`:
+            es lo primero que se ve al abrir la página. Si se cargara de
+            forma diferida, el hero aparecería oscuro y la ilustración
+            entraría de golpe un segundo después — justo la sensación de
+            lentitud que queremos evitar. El degradado de `.hero-brand-bg`
+            queda debajo como base mientras la imagen llega. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <Image
+            src="/fondo-hero.jpg"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-center"
+          />
+          {/* Oscurece el lado izquierdo, que es donde va el texto: la
+              ilustración ahí ya es oscura, pero no lo suficiente para
+              garantizar contraste en cualquier pantalla. */}
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(5,12,10,0.92),rgba(5,12,10,0.6)_55%,rgba(5,12,10,0.15))]" />
+        </div>
         <div className="relative mx-auto w-full max-w-5xl px-6 py-16 sm:py-20">
           <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
             Análisis, señales y educación
