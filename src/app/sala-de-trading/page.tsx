@@ -1,37 +1,34 @@
-import Link from "next/link";
-import { AuthStatus } from "@/components/AuthStatus";
 import { CandleChart } from "@/components/CandleChart";
+import { TradingRoomHeader } from "@/components/TradingRoomHeader";
+import { TradingInfoBar } from "@/components/TradingInfoBar";
+import { TradingWatchlist } from "@/components/TradingWatchlist";
+import { TradingFooter } from "@/components/TradingFooter";
 
-// Gráfico a pantalla completa — como TradingView, ThinkOrSwim o TC2000,
-// sin el resto de la página alrededor. Público, igual que el de la
-// portada (no requiere cuenta ni suscripción): es el mismo universo de
-// símbolos que ya se ve ahí, solo que ocupando toda la pantalla.
+// Sala de trading mejorada — gráfico a pantalla completa como TradingView
+// con header informativo, barra de datos de mercado, watchlist lateral,
+// y footer con análisis rápido. Público, sin requerimientos de suscripción.
 export default function SalaDeTrading() {
   return (
     <div className="flex h-screen flex-col bg-bg">
-      <header className="shrink-0 border-b border-border">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-6 py-3">
-          <Link
-            href="/"
-            className="font-display text-base tracking-tight text-text"
-          >
-            1er <span className="text-gold">Millón</span> de Dólares
-          </Link>
-          <div className="flex items-center gap-5">
-            <Link
-              href="/"
-              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
-            >
-              ← volver
-            </Link>
-            <AuthStatus />
-          </div>
-        </div>
-      </header>
+      {/* Header con símbolo, precio y datos principales */}
+      <TradingRoomHeader />
 
-      <main className="min-h-0 flex-1 px-3 py-3">
-        <CandleChart fillHeight />
-      </main>
+      {/* Barra de información de mercado */}
+      <TradingInfoBar />
+
+      {/* Contenedor principal: gráfico + sidebar */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Gráfico TradingView en el centro */}
+        <main className="min-h-0 flex-1 overflow-hidden px-3 py-3">
+          <CandleChart fillHeight />
+        </main>
+
+        {/* Sidebar con watchlist */}
+        <TradingWatchlist />
+      </div>
+
+      {/* Footer con estadísticas de mercado */}
+      <TradingFooter />
     </div>
   );
 }
