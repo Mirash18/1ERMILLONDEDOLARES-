@@ -1,15 +1,11 @@
 import Image from "next/image";
 import type { Testimonial } from "@/lib/testimonials";
-
-// Componente de servidor a propósito — el movimiento es puro CSS
-// (@keyframes en globals.css), no hace falta JS ni "use client" para
-// nada de esto.
+import { TestimonialsGrid } from "./TestimonialsGrid";
 
 /**
  * Fondo de la sección de testimonios: la ilustración que mandó Alejo —
- * velas verdes y rojas, el toro y el oso, la alegoría clásica del
- * mercado. Reemplazó una versión dibujada a mano con SVG que se quedaba
- * corta al lado de esta.
+ * el toro y el oso como siluetas doradas tenues a los lados, con el
+ * centro oscuro y limpio para que las tarjetas se lean primero.
  *
  * **Sin `priority` a propósito.** Esta sección va bien abajo de la
  * página, así que la imagen se descarga recién cuando alguien baja
@@ -37,61 +33,10 @@ function TradingBackdrop() {
         sizes="100vw"
         className="object-cover object-center"
       />
-      {/* Velo mucho más suave que antes: esta ilustración ya nace
-          oscura y con el centro limpio (se pidió así justamente para
-          que las tarjetas fueran lo primero que se lee). La anterior
-          tenía zonas claras y necesitaba el triple de velo. */}
+      {/* Velo suave: esta ilustración ya nace oscura y con el centro
+          limpio (se pidió así justamente para que las tarjetas fueran lo
+          primero que se lee). */}
       <div className="absolute inset-0 bg-black/15" />
-    </div>
-  );
-}
-
-function Card({ t }: { t: Testimonial }) {
-  return (
-    <div className="flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border border-[#e4e0d4] bg-[#fbfaf6] shadow-sm">
-      {t.mediaType === "video" ? (
-        <video
-          src={t.mediaUrl}
-          className="h-40 w-full object-cover"
-          autoPlay
-          muted
-          loop
-          playsInline
-        />
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={t.mediaUrl} alt={t.name} className="h-40 w-full object-cover" />
-      )}
-      <div className="flex flex-1 flex-col gap-2 p-4">
-        <p className="text-sm leading-snug text-[#2a2a24]">&ldquo;{t.text}&rdquo;</p>
-        <span className="mt-auto font-mono text-[11px] font-medium text-[#4c8fd1]">
-          {t.name}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Row({
-  items,
-  reverse,
-}: {
-  items: Testimonial[];
-  reverse: boolean;
-}) {
-  // Se duplica la lista una vez: con el track animado exactamente -50% de
-  // su ancho total, la segunda mitad (idéntica a la primera) entra justo
-  // cuando la primera termina de salir — el bucle no se nota.
-  const doubled = [...items, ...items];
-  return (
-    <div className="marquee-row overflow-hidden">
-      <div
-        className={`flex w-max gap-4 ${reverse ? "marquee-track-reverse" : "marquee-track"}`}
-      >
-        {doubled.map((t, i) => (
-          <Card key={`${t.id}-${i}`} t={t} />
-        ))}
-      </div>
     </div>
   );
 }
@@ -99,15 +44,8 @@ function Row({
 export function TestimonialsMarquee({ items }: { items: Testimonial[] }) {
   if (items.length === 0) return null;
 
-  // Con pocos testimonios, una sola fila alcanza — la segunda fila (en
-  // sentido contrario) se agrega recién cuando hay variedad suficiente
-  // para que no se sienta como repetir lo mismo dos veces seguidas.
-  const mitad = Math.ceil(items.length / 2);
-  const filaUno = items.slice(0, mitad);
-  const filaDos = items.slice(mitad);
-
   return (
-    <section className="relative overflow-hidden pb-28 pt-16">
+    <section className="relative overflow-hidden pb-24 pt-16">
       <TradingBackdrop />
       <div className="relative">
         {/* Centrado: la ilustración tiene el toro a la izquierda y el oso
@@ -118,10 +56,7 @@ export function TestimonialsMarquee({ items }: { items: Testimonial[] }) {
             Lo que dicen nuestros alumnos
           </h2>
         </div>
-        <div className="flex flex-col gap-4">
-          <Row items={filaUno} reverse={false} />
-          {filaDos.length > 0 && <Row items={filaDos} reverse />}
-        </div>
+        <TestimonialsGrid items={items} />
       </div>
     </section>
   );
