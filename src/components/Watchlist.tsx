@@ -9,6 +9,13 @@ import { sectorOf, nameOf } from "@/lib/universe";
 type Sector = { name: string; symbols: string[] };
 type OrdenColumna = "symbol" | "price";
 
+// Lista de seguimiento por defecto — la que ve alguien que todavía no ha
+// armado la suya, tomada de la "Lista roja" que Alejo mostró en su
+// TradingView. En cuanto agrega o quita algo, su lista propia manda y estos
+// dejan de aparecer. Todos tienen que existir en el universo de símbolos
+// (ver FREE_SYMBOLS / SECTORS en universe.ts), si no, no cargarían precio.
+const DEFAULT_WATCHLIST = ["SPY", "QQQ", "MU", "META", "AMD", "GLD", "TSLA"];
+
 /**
  * Lista de seguimiento (watchlist) de la Sala de Trading — como el panel
  * "Populares" de ProRealTime, con un buscador por categorías como el
@@ -72,9 +79,16 @@ export function Watchlist({
     fetch("/api/watchlist")
       .then((res) => res.json())
       .then((json: { symbols?: string[] }) => {
-        if (!cancelled) setFavorites(json.symbols ?? []);
+        if (cancelled) return;
+        // Si todavía no ha guardado ninguna, se muestran las de por defecto
+        // (no se guardan solas: recién se persiste cuando agrega o quita
+        // algo, y ahí su lista propia reemplaza a estas).
+        const saved = json.symbols ?? [];
+        setFavorites(saved.length ? saved : DEFAULT_WATCHLIST);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setFavorites(DEFAULT_WATCHLIST);
+      });
     return () => {
       cancelled = true;
     };

@@ -22,7 +22,11 @@
  * endpoints de referencia en planes pagos) en vez de vivir hardcodeada aquí.
  */
 
-export const FREE_SYMBOLS = ["SPY", "META", "GLD"] as const;
+// QQQ (Nasdaq-100) se agregó como símbolo libre para poder incluirlo en la
+// lista de seguimiento por defecto de la Sala de Trading (Alejo lo tiene en
+// su "Lista roja"). Es un ETF, igual que SPY y GLD, así que la fuente de
+// datos lo trata igual.
+export const FREE_SYMBOLS = ["SPY", "QQQ", "META", "GLD"] as const;
 
 // Nasdaq-100, componentes conocidos. No tienen sector propio aquí — varios
 // ya aparecen en los sectores de abajo (Tecnología, Consumo, etc.); el
