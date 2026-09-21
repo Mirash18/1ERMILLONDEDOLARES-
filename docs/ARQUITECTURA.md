@@ -5,6 +5,11 @@ construyó, por qué se tomó cada decisión, y qué depende de qué. Se
 actualiza en cada fase — no es un documento que se escribe una vez y se
 olvida.
 
+> **¿Retomando el proyecto?** Empieza por
+> [`ESTADO-Y-PENDIENTES.md`](./ESTADO-Y-PENDIENTES.md): resume dónde está
+> todo hoy, qué falta, y las trampas ya conocidas. Este documento es el
+> detalle técnico de fondo.
+
 ## Estado actual
 
 **Dominio:** `1ermillondedolares.com` (comprado).
