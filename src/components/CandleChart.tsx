@@ -977,7 +977,70 @@ const DRAW_TOOLS = [
   { key: "text" as const, label: "Texto", hint: "Un clic coloca el cuadro" },
 ];
 
-function DrawToolsDropdown({
+// Icono de cada herramienta de dibujo, para la barra vertical de la
+// izquierda (18x18, traza con currentColor así hereda el color del botón).
+function DrawToolIcon({ tool }: { tool: Exclude<DrawTool, "none"> }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 18 18",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  switch (tool) {
+    case "horizontal":
+      return (
+        <svg {...common}>
+          <line x1="2" y1="9" x2="16" y2="9" />
+          <circle cx="4" cy="9" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="14" cy="9" r="1.3" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "trend":
+      return (
+        <svg {...common}>
+          <line x1="3" y1="15" x2="15" y2="3" />
+          <circle cx="3" cy="15" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="3" r="1.6" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "measure":
+      return (
+        <svg {...common}>
+          <rect x="2.5" y="6" width="13" height="6" rx="1" />
+          <line x1="6" y1="6" x2="6" y2="9" />
+          <line x1="9" y1="6" x2="9" y2="9" />
+          <line x1="12" y1="6" x2="12" y2="9" />
+        </svg>
+      );
+    case "regression":
+      return (
+        <svg {...common}>
+          <line x1="3" y1="13" x2="15" y2="5" />
+          <line x1="3" y1="16" x2="15" y2="8" strokeDasharray="2 2" opacity="0.7" />
+          <line x1="3" y1="10" x2="15" y2="2" strokeDasharray="2 2" opacity="0.7" />
+        </svg>
+      );
+    case "text":
+      return (
+        <svg {...common}>
+          <line x1="4" y1="4" x2="14" y2="4" />
+          <line x1="9" y1="4" x2="9" y2="14" />
+        </svg>
+      );
+  }
+}
+
+// Barra vertical de herramientas de dibujo, pegada al borde izquierdo del
+// gráfico y siempre visible — como la de TradingView (a pedido de Alejo,
+// viendo su gráfico real). Cada icono es una herramienta; al hacer clic se
+// activa (queda resaltada) y el próximo clic/arrastre sobre el gráfico
+// dibuja. Volver a hacer clic en la misma la apaga. Reemplaza al antiguo
+// menú desplegable "Dibujar".
+function DrawToolbar({
   drawTool,
   onSelect,
   palette,
@@ -986,63 +1049,30 @@ function DrawToolsDropdown({
   onSelect: (tool: Exclude<DrawTool, "none">) => void;
   palette: Palette;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, []);
-
-  const activo = DRAW_TOOLS.find((t) => t.key === drawTool);
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded px-3 py-1.5 font-mono text-xs transition-colors"
-        style={{
-          backgroundColor: activo ? palette.buttonActiveBg : palette.buttonBg,
-          color: activo ? palette.buttonActiveText : palette.buttonText,
-        }}
-      >
-        {activo ? activo.label : "Dibujar"}
-        <span className="text-[9px] opacity-70">▾</span>
-      </button>
-      {open && (
-        <div
-          className="absolute right-0 top-full z-40 mt-1 min-w-[220px] overflow-hidden rounded border shadow-lg"
-          style={{ backgroundColor: palette.buttonBg, borderColor: palette.wrapperBorder }}
-        >
-          {DRAW_TOOLS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                onSelect(t.key);
-                setOpen(false);
-              }}
-              className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left font-mono text-xs transition-colors"
-              style={{
-                backgroundColor: drawTool === t.key ? palette.buttonActiveBg : "transparent",
-                color: drawTool === t.key ? palette.buttonActiveText : palette.buttonText,
-              }}
-            >
-              <span>{t.label}</span>
-              <span className="text-[10px] opacity-70">{t.hint}</span>
-            </button>
-          ))}
-        </div>
-      )}
+    <div
+      className="flex shrink-0 flex-col items-center gap-1 rounded-md border p-1"
+      style={{ backgroundColor: palette.buttonBg, borderColor: palette.wrapperBorder }}
+    >
+      {DRAW_TOOLS.map((t) => {
+        const active = drawTool === t.key;
+        return (
+          <button
+            key={t.key}
+            onClick={() => onSelect(t.key)}
+            aria-pressed={active}
+            title={`${t.label} — ${t.hint}`}
+            aria-label={t.label}
+            className="flex h-8 w-8 items-center justify-center rounded transition-colors"
+            style={{
+              backgroundColor: active ? palette.buttonActiveBg : "transparent",
+              color: active ? palette.buttonActiveText : palette.buttonText,
+            }}
+          >
+            <DrawToolIcon tool={t.key} />
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -2571,11 +2601,6 @@ export function CandleChart({
             onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
           />
-          <DrawToolsDropdown
-            drawTool={drawTool}
-            onSelect={(t) => setDrawTool((prev) => (prev === t ? "none" : t))}
-            palette={palette}
-          />
           <ObjectsDropdown
             showBollinger={showBollinger}
             showVolume={showVolume}
@@ -2709,12 +2734,21 @@ export function CandleChart({
         </div>
       </div>
 
-      <div className={fillHeight ? "relative min-h-0 flex-1" : "relative"}>
-        <div
-          ref={containerRef}
-          className={fillHeight ? "h-full w-full" : "w-full"}
-          style={drawTool !== "none" ? { cursor: "crosshair" } : undefined}
+      <div className={fillHeight ? "flex min-h-0 flex-1 gap-1.5" : "flex gap-1.5"}>
+        {/* Barra vertical de dibujo, siempre a la vista sobre el borde
+            izquierdo del gráfico (como TradingView) — reemplazó al menú
+            desplegable "Dibujar". */}
+        <DrawToolbar
+          drawTool={drawTool}
+          onSelect={(t) => setDrawTool((prev) => (prev === t ? "none" : t))}
+          palette={palette}
         />
+        <div className={fillHeight ? "relative min-h-0 flex-1" : "relative flex-1"}>
+          <div
+            ref={containerRef}
+            className={fillHeight ? "h-full w-full" : "w-full"}
+            style={drawTool !== "none" ? { cursor: "crosshair" } : undefined}
+          />
         {/* Cuenta regresiva hasta que cierre la vela actual y abra la
             siguiente — pegada justo debajo de la etiqueta de precio actual,
             así que sube y baja con el precio en vez de quedar fija en una
@@ -2819,6 +2853,7 @@ export function CandleChart({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
