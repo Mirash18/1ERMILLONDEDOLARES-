@@ -31,7 +31,7 @@ function TradingBackdrop() {
     <div aria-hidden className="fundido-vertical pointer-events-none absolute inset-0">
       <div className="absolute inset-0 bg-[#0b0e14]" />
       <Image
-        src="/fondo-testimonios.jpg"
+        src="/testimonios-siluetas.jpg"
         alt=""
         fill
         sizes="100vw"

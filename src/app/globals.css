@@ -90,6 +90,17 @@ body {
    mismo tono y el corte deja de existir.
    El color es literal (no var(--bg)) a propósito: estas secciones son
    oscuras en los dos temas, porque las ilustraciones lo son. */
+/* Variante para el hero: solo desvanece ABAJO. Arriba no hace falta —
+   el encabezado pegajoso ya cubre esa franja y la ilustración de ahí
+   nace oscura. Desvanecer arriba solo apagaba las velas sin ganar nada. */
+.fundido-abajo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent 72%, #0b0e14 100%);
+}
+
 .fundido-vertical::after {
   content: "";
   position: absolute;

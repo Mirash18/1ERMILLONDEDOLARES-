@@ -42,19 +42,23 @@ export default async function Home() {
             entraría de golpe un segundo después — justo la sensación de
             lentitud que queremos evitar. El degradado de `.hero-brand-bg`
             queda debajo como base mientras la imagen llega. */}
-        <div aria-hidden className="fundido-vertical pointer-events-none absolute inset-0">
+        <div aria-hidden className="fundido-abajo pointer-events-none absolute inset-0">
           <Image
-            src="/fondo-hero.jpg"
+            src="/hero-velas.jpg"
             alt=""
             fill
             priority
             sizes="100vw"
             className="object-cover object-center"
           />
-          {/* Oscurece el lado izquierdo, que es donde va el texto: la
-              ilustración ahí ya es oscura, pero no lo suficiente para
-              garantizar contraste en cualquier pantalla. */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(5,12,10,0.92),rgba(5,12,10,0.6)_55%,rgba(5,12,10,0.15))]" />
+          {/* Velo apenas insinuado, y se apaga del todo antes de llegar a
+              las velas. Esta ilustración ya nace con la mitad izquierda
+              negra (se pidió así a propósito), así que taparla más solo
+              apagaba el dibujo sin ganar contraste: sobre negro, un velo
+              oscuro no se nota. Se conserva únicamente por el celular,
+              donde la sección es alta y angosta, el recorte se come el
+              margen izquierdo y las velas se le acercan al texto. */}
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(5,12,10,0.55),rgba(5,12,10,0.12)_45%,transparent_65%)]" />
         </div>
         <div className="relative mx-auto w-full max-w-5xl px-6 py-16 sm:py-20">
           <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
