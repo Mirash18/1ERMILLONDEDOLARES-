@@ -26,14 +26,17 @@ import { Watchlist } from "./Watchlist";
 // caso mostrarlo con meses de anticipación, ver docs/ARQUITECTURA.md.
 const EARNINGS_WARNING_DAYS = 21;
 
+// `label` es el nombre largo (para el árbol de objetos / accesibilidad);
+// `short` es lo que se pinta en el botón de la barra, tipo TradingView
+// (5m 15m 30m 1h D S M).
 const TIMEFRAMES = [
-  { key: "5min", label: "5m" },
-  { key: "15min", label: "15m" },
-  { key: "30min", label: "30m" },
-  { key: "1h", label: "Hora" },
-  { key: "1day", label: "Día" },
-  { key: "1week", label: "Semana" },
-  { key: "1month", label: "Mes" },
+  { key: "5min", label: "5m", short: "5m" },
+  { key: "15min", label: "15m", short: "15m" },
+  { key: "30min", label: "30m", short: "30m" },
+  { key: "1h", label: "Hora", short: "1h" },
+  { key: "1day", label: "Día", short: "D" },
+  { key: "1week", label: "Semana", short: "S" },
+  { key: "1month", label: "Mes", short: "M" },
 ] as const;
 
 type TimeframeKey = (typeof TIMEFRAMES)[number]["key"];
@@ -823,6 +826,45 @@ function SelectDropdown<K extends string>({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Fila de botones de temporalidad, tipo TradingView (5m 15m 30m 1h D S M):
+// todas visibles a la vez, la activa resaltada. A pedido de Alejo, en vez
+// del menú desplegable "Hora" — así se cambia de marco con un solo clic.
+function TimeframeButtons({
+  value,
+  onChange,
+  palette,
+}: {
+  value: TimeframeKey;
+  onChange: (key: TimeframeKey) => void;
+  palette: Palette;
+}) {
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded p-0.5"
+      style={{ backgroundColor: palette.buttonBg }}
+    >
+      {TIMEFRAMES.map((tf) => {
+        const active = tf.key === value;
+        return (
+          <button
+            key={tf.key}
+            onClick={() => onChange(tf.key)}
+            aria-pressed={active}
+            aria-label={tf.label}
+            className="rounded px-2.5 py-1 font-mono text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: active ? palette.buttonActiveBg : "transparent",
+              color: active ? palette.buttonActiveText : palette.buttonText,
+            }}
+          >
+            {tf.short}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -2510,9 +2552,8 @@ export function CandleChart({
             onChange={setSymbol}
             palette={palette}
           />
-          <SelectDropdown
+          <TimeframeButtons
             value={timeframe}
-            options={TIMEFRAMES}
             onChange={setTimeframe}
             palette={palette}
           />
