@@ -57,7 +57,7 @@ export default async function Introduccion() {
   if (!access.allowed) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center bg-bg px-6 text-center">
-        <p className="mb-2 font-mono text-xs uppercase tracking-[0.14em] text-gold">
+        <p className="mb-2 font-sans text-xs uppercase tracking-[0.14em] text-gold">
           Introducción
         </p>
         <h1 className="mb-3 font-display text-2xl font-medium text-text">
@@ -69,7 +69,7 @@ export default async function Introduccion() {
         </p>
         <Link
           href="/"
-          className="mt-6 font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+          className="mt-6 font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
         >
           ← volver
         </Link>
@@ -90,13 +90,13 @@ export default async function Introduccion() {
           <div className="flex items-center gap-5">
             <Link
               href="/"
-              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
             >
               ← volver
             </Link>
             <Link
               href="/sala-de-trading"
-              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
             >
               Sala de Trading
             </Link>
@@ -107,7 +107,7 @@ export default async function Introduccion() {
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
         <section className="mb-12">
-          <p className="mb-2 font-mono text-xs uppercase tracking-[0.14em] text-gold">
+          <p className="mb-2 font-sans text-xs uppercase tracking-[0.14em] text-gold">
             Bienvenido
           </p>
           <h1 className="text-balance font-display text-4xl font-medium leading-tight text-text sm:text-5xl">
@@ -134,7 +134,7 @@ export default async function Introduccion() {
                   {m.titulo}
                 </h3>
                 <p className="text-sm text-text-soft">{m.resumen}</p>
-                <span className="mt-1 w-fit rounded border border-border bg-input px-2 py-1 font-mono text-[10px] text-text-soft">
+                <span className="mt-1 w-fit rounded border border-border bg-input px-2 py-1 font-sans text-[10px] text-text-soft">
                   Próximamente
                 </span>
               </div>
@@ -157,7 +157,7 @@ export default async function Introduccion() {
         </section>
       </main>
 
-      <footer className="border-t border-border px-6 py-6 text-center font-mono text-[11px] text-text-soft">
+      <footer className="border-t border-border px-6 py-6 text-center font-sans text-[11px] text-text-soft">
         1er Millón de Dólares — contenido educativo, no es asesoría financiera.
       </footer>
     </div>

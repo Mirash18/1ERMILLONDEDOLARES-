@@ -61,7 +61,7 @@ export default async function Home() {
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(5,12,10,0.55),rgba(5,12,10,0.12)_45%,transparent_65%)]" />
         </div>
         <div className="relative mx-auto w-full max-w-5xl px-6 py-16 sm:py-20">
-          <p className="mb-3 font-sans text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
+          <p className="mb-3 font-sans text-xs uppercase tracking-[0.14em] text-gold">
             Análisis, señales y educación
           </p>
           <h1 className="max-w-2xl text-balance font-display text-4xl font-medium leading-tight text-white sm:text-5xl">
@@ -73,7 +73,7 @@ export default async function Home() {
           </p>
           <Link
             href="/introduccion"
-            className="mt-7 inline-flex w-fit items-center rounded-md bg-[#4c8fd1] px-5 py-2.5 font-sans text-sm font-medium text-[#06111d] transition-colors hover:bg-[#5fa0e0]"
+            className="mt-7 inline-flex w-fit items-center rounded-md bg-gold px-5 py-2.5 font-sans text-sm font-medium text-bg transition-opacity hover:opacity-90"
           >
             Empezar en la academia
           </Link>

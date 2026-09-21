@@ -53,7 +53,7 @@ export default async function Suscripcion() {
           <div className="flex items-center gap-5">
             <Link
               href="/"
-              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
             >
               ← volver
             </Link>
@@ -64,7 +64,7 @@ export default async function Suscripcion() {
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
         <section className="mb-12">
-          <p className="mb-2 font-mono text-xs uppercase tracking-[0.14em] text-gold">
+          <p className="mb-2 font-sans text-xs uppercase tracking-[0.14em] text-gold">
             Membresía
           </p>
           <h1 className="text-balance font-display text-4xl font-medium leading-tight text-text">
@@ -81,12 +81,12 @@ export default async function Suscripcion() {
             <span className="font-display text-5xl font-medium text-text">
               $25
             </span>
-            <span className="font-mono text-sm text-text-soft">USD / mes</span>
+            <span className="font-sans text-sm text-text-soft">USD / mes</span>
           </div>
 
           <div className="my-7 h-px bg-border" />
 
-          <h2 className="mb-4 font-mono text-[11px] uppercase tracking-[0.12em] text-gold">
+          <h2 className="mb-4 font-sans text-[11px] uppercase tracking-[0.12em] text-gold">
             Disponible ahora
           </h2>
           <ul className="mb-8 flex flex-col gap-2.5">
@@ -98,7 +98,7 @@ export default async function Suscripcion() {
             ))}
           </ul>
 
-          <h2 className="mb-4 font-mono text-[11px] uppercase tracking-[0.12em] text-text-soft">
+          <h2 className="mb-4 font-sans text-[11px] uppercase tracking-[0.12em] text-text-soft">
             En camino
           </h2>
           <ul className="mb-8 flex flex-col gap-2.5">
@@ -111,7 +111,7 @@ export default async function Suscripcion() {
                   <span className="mt-[2px] opacity-50">○</span>
                   {item.texto}
                 </span>
-                <span className="rounded border border-border bg-input px-2 py-0.5 font-mono text-[10px]">
+                <span className="rounded border border-border bg-input px-2 py-0.5 font-sans text-[10px]">
                   {item.nota}
                 </span>
               </li>
@@ -123,7 +123,7 @@ export default async function Suscripcion() {
               <SignUpButton mode="modal">
                 <button
                   type="button"
-                  className="w-full rounded bg-gold px-6 py-3 font-mono text-sm font-medium text-bg transition-opacity hover:opacity-90"
+                  className="w-full rounded bg-gold px-6 py-3 font-sans text-sm font-medium text-bg transition-opacity hover:opacity-90"
                 >
                   Crear cuenta
                 </button>
@@ -131,7 +131,7 @@ export default async function Suscripcion() {
               <SignInButton mode="modal">
                 <button
                   type="button"
-                  className="w-full rounded border border-border px-6 py-3 font-mono text-sm font-medium text-text transition-colors hover:border-gold/40"
+                  className="w-full rounded border border-border px-6 py-3 font-sans text-sm font-medium text-text transition-colors hover:border-gold/40"
                 >
                   Ya tengo cuenta
                 </button>
@@ -141,7 +141,7 @@ export default async function Suscripcion() {
             <button
               type="button"
               disabled={!pagosListos || access.status === "activa"}
-              className="w-full rounded bg-gold px-6 py-3 font-mono text-sm font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-full rounded bg-gold px-6 py-3 font-sans text-sm font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
               {access.status === "activa"
                 ? "Suscripción activa"
@@ -151,7 +151,7 @@ export default async function Suscripcion() {
             </button>
           )}
 
-          <p className="mt-3 text-center font-mono text-[11px] text-text-soft">
+          <p className="mt-3 text-center font-sans text-[11px] text-text-soft">
             {access.status === "sin-cuenta"
               ? "Crea tu cuenta ahora — cuando se active el cobro, ya vas a estar listo."
               : access.status === "sin-suscripcion" && !pagosListos
@@ -166,7 +166,7 @@ export default async function Suscripcion() {
         </p>
       </main>
 
-      <footer className="border-t border-border px-6 py-6 text-center font-mono text-[11px] text-text-soft">
+      <footer className="border-t border-border px-6 py-6 text-center font-sans text-[11px] text-text-soft">
         1er Millón de Dólares — contenido educativo, no es asesoría financiera.
       </footer>
     </div>

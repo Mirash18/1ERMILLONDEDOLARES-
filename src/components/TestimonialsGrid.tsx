@@ -75,7 +75,7 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
               <p className="text-sm leading-snug text-[#2a2a24]">
                 &ldquo;{t.text}&rdquo;
               </p>
-              <span className="mt-auto font-sans text-[11px] font-medium text-[#4c8fd1]">
+              <span className="mt-auto font-sans text-[11px] font-medium text-gold">
                 {t.name}
               </span>
             </div>
@@ -121,7 +121,7 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
 
           <div className="max-w-xl text-center">
             <p className="text-sm text-white/90">&ldquo;{ampliado.text}&rdquo;</p>
-            <span className="mt-1 block font-sans text-[11px] text-[#8fc4f2]">
+            <span className="mt-1 block font-sans text-[11px] text-gold">
               {ampliado.name}
             </span>
           </div>
