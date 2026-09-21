@@ -76,15 +76,34 @@ export default async function Home() {
         </div>
       </section>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
-        <section className="mb-8">
-          <TickerStrip />
-        </section>
+      {/* La ilustración del toro y el oso va DETRÁS de la sección, no
+          detrás del gráfico. El gráfico pinta su propio fondo opaco y
+          queda encima como una tarjeta sólida: así la ilustración
+          enmarca la herramienta sin que las velas finas, las medias
+          móviles y las etiquetas de precio tengan que pelear contra un
+          oso. Carga diferida (sin `priority`) — a esta altura de la
+          página el usuario ya tiene que haber bajado. */}
+      <div className="relative flex-1 overflow-hidden bg-bg">
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <Image
+            src="/fondo-grafico.jpg"
+            alt=""
+            fill
+            sizes="100vw"
+            className="object-cover object-left"
+          />
+          <div className="absolute inset-0 bg-[rgba(6,12,10,0.62)]" />
+        </div>
+        <main className="relative mx-auto w-full max-w-5xl px-6 py-16">
+          <section className="mb-8">
+            <TickerStrip />
+          </section>
 
-        <section>
-          <CandleChart />
-        </section>
-      </main>
+          <section>
+            <CandleChart />
+          </section>
+        </main>
+      </div>
 
       <TestimonialsMarquee items={testimonials} />
 
