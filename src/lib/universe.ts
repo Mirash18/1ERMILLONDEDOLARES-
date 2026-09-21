@@ -181,3 +181,54 @@ export function isPaidSymbol(symbol: string): boolean {
 export function sectorOf(symbol: string): string | null {
   return SECTORS.find((s) => s.symbols.includes(symbol))?.name ?? null;
 }
+
+// Nombres de empresa/fondo — para la ficha de detalle de la Sala de
+// Trading. A propósito NO es una lista de las 500: son nombres reales y
+// verificados de los símbolos que de verdad se consultan a diario (los
+// ETF y las grandes tecnológicas). Un símbolo que no esté aquí
+// simplemente no muestra la línea del nombre — nunca se inventa uno. Si
+// más adelante se conecta una fuente de referencia (Twelve Data pago la
+// tiene), esto se reemplaza por datos vivos.
+const COMPANY_NAMES: Record<string, string> = {
+  // ETF / índices
+  SPY: "SPDR S&P 500 ETF Trust",
+  QQQ: "Invesco QQQ Trust (Nasdaq-100)",
+  DIA: "SPDR Dow Jones Industrial Average ETF",
+  IWM: "iShares Russell 2000 ETF",
+  GLD: "SPDR Gold Shares",
+  TLT: "iShares 20+ Year Treasury Bond ETF",
+  // Grandes tecnológicas y más consultadas
+  AAPL: "Apple Inc.",
+  MSFT: "Microsoft Corporation",
+  NVDA: "NVIDIA Corporation",
+  AMZN: "Amazon.com, Inc.",
+  META: "Meta Platforms, Inc.",
+  GOOGL: "Alphabet Inc. (Clase A)",
+  GOOG: "Alphabet Inc. (Clase C)",
+  TSLA: "Tesla, Inc.",
+  AMD: "Advanced Micro Devices, Inc.",
+  MU: "Micron Technology, Inc.",
+  NFLX: "Netflix, Inc.",
+  INTC: "Intel Corporation",
+  AVGO: "Broadcom Inc.",
+  QCOM: "QUALCOMM Incorporated",
+  ADBE: "Adobe Inc.",
+  CRM: "Salesforce, Inc.",
+  ORCL: "Oracle Corporation",
+  IBM: "International Business Machines",
+  PYPL: "PayPal Holdings, Inc.",
+  DIS: "The Walt Disney Company",
+  KO: "The Coca-Cola Company",
+  PEP: "PepsiCo, Inc.",
+  JPM: "JPMorgan Chase & Co.",
+  V: "Visa Inc.",
+  MA: "Mastercard Incorporated",
+  WMT: "Walmart Inc.",
+  COST: "Costco Wholesale Corporation",
+  BA: "The Boeing Company",
+  XOM: "Exxon Mobil Corporation",
+};
+
+export function nameOf(symbol: string): string | null {
+  return COMPANY_NAMES[symbol] ?? null;
+}

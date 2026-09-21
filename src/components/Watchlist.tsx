@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import type { Palette } from "./CandleChart";
 import type { Quote } from "@/lib/marketData";
-import { sectorOf } from "@/lib/universe";
+import { sectorOf, nameOf } from "@/lib/universe";
 
 type Sector = { name: string; symbols: string[] };
 type OrdenColumna = "symbol" | "price";
@@ -341,43 +341,52 @@ export function Watchlist({
         })}
       </div>
 
-      {/* Ficha del símbolo activo del gráfico — solo con datos reales que sí
-          tenemos (símbolo, sector, precio, % del día): nada de descripción
-          de la empresa ni noticias, porque no hay una fuente de eso todavía
-          y este sitio no finge tener listo lo que no tiene. Solo aparece si
-          el símbolo activo ya está entre las favoritas (para no gastar una
-          consulta extra de Twelve Data solo por esta ficha). */}
-      {quotes[symbol] && (
-        <div
-          className="mt-2 border-t pt-2"
-          style={{ borderColor: palette.wrapperBorder }}
-        >
-          <p className="font-mono text-sm font-medium" style={{ color: palette.buttonText }}>
-            {symbol}
+      {/* Ficha de detalle del símbolo activo del gráfico. Con datos reales
+          que sí tenemos: símbolo, nombre de empresa/fondo, sector, y —
+          cuando el símbolo está entre las favoritas (su cotización ya se
+          consultó) — precio y % del día. Nada de noticias: no hay una
+          fuente de eso todavía y este sitio no finge tener listo lo que no
+          tiene (decisión de Alejo, sin noticias por ahora).
+
+          El nombre y el sector son estáticos (no cuestan una consulta a
+          Twelve Data), así que la ficha aparece SIEMPRE para el símbolo
+          activo, no solo si es favorita; el precio solo se añade si ya se
+          tiene la cotización, para no gastar una consulta extra solo por
+          esta ficha. */}
+      <div
+        className="mt-2 border-t pt-2"
+        style={{ borderColor: palette.wrapperBorder }}
+      >
+        <p className="font-mono text-sm font-medium" style={{ color: palette.buttonText }}>
+          {symbol}
+        </p>
+        {nameOf(symbol) && (
+          <p className="font-mono text-[11px]" style={{ color: palette.buttonText }}>
+            {nameOf(symbol)}
           </p>
-          {sectorOf(symbol) && (
-            <p className="font-mono text-[10px] opacity-60" style={{ color: palette.textSoft }}>
-              {sectorOf(symbol)}
-            </p>
-          )}
-          {quotes[symbol].price != null && (
-            <p className="mt-1 flex items-baseline gap-2 font-mono">
-              <span className="text-lg" style={{ color: palette.buttonText }}>
-                {quotes[symbol].price!.toFixed(2)}
-              </span>
-              <span
-                className="text-xs"
-                style={{
-                  color: (quotes[symbol].change ?? 0) >= 0 ? "#089981" : "#F23645",
-                }}
-              >
-                {(quotes[symbol].change ?? 0) >= 0 ? "+" : ""}
-                {quotes[symbol].percentChange?.toFixed(2)}%
-              </span>
-            </p>
-          )}
-        </div>
-      )}
+        )}
+        {sectorOf(symbol) && (
+          <p className="font-mono text-[10px] opacity-60" style={{ color: palette.textSoft }}>
+            {sectorOf(symbol)}
+          </p>
+        )}
+        {quotes[symbol]?.price != null && (
+          <p className="mt-1 flex items-baseline gap-2 font-mono">
+            <span className="text-lg" style={{ color: palette.buttonText }}>
+              {quotes[symbol].price!.toFixed(2)}
+            </span>
+            <span
+              className="text-xs"
+              style={{
+                color: (quotes[symbol].change ?? 0) >= 0 ? "#089981" : "#F23645",
+              }}
+            >
+              {(quotes[symbol].change ?? 0) >= 0 ? "+" : ""}
+              {quotes[symbol].percentChange?.toFixed(2)}%
+            </span>
+          </p>
+        )}
+      </div>
 
       {modalOpen && (
         <div
