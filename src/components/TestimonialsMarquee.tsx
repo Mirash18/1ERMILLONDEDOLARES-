@@ -28,20 +28,20 @@ import type { Testimonial } from "@/lib/testimonials";
  */
 function TradingBackdrop() {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0">
-      <div className="absolute inset-0 bg-[#0b1410]" />
+    <div aria-hidden className="fundido-vertical pointer-events-none absolute inset-0">
+      <div className="absolute inset-0 bg-[#0b0e14]" />
       <Image
         src="/fondo-testimonios.jpg"
         alt=""
         fill
         sizes="100vw"
-        className="object-cover object-bottom"
+        className="object-cover object-center"
       />
-      {/* Vela de oscuridad encima: la ilustración tiene zonas claras
-          (el toro, los destellos) y las tarjetas van justo ahí. Esto
-          baja el contraste del fondo lo suficiente para que el texto de
-          las tarjetas siga siendo lo primero que se lee. */}
-      <div className="absolute inset-0 bg-black/25" />
+      {/* Velo mucho más suave que antes: esta ilustración ya nace
+          oscura y con el centro limpio (se pidió así justamente para
+          que las tarjetas fueran lo primero que se lee). La anterior
+          tenía zonas claras y necesitaba el triple de velo. */}
+      <div className="absolute inset-0 bg-black/15" />
     </div>
   );
 }
@@ -110,10 +110,9 @@ export function TestimonialsMarquee({ items }: { items: Testimonial[] }) {
     <section className="relative overflow-hidden pb-28 pt-16">
       <TradingBackdrop />
       <div className="relative">
-        {/* Centrado y sin la etiqueta de "Testimonios": la ilustración de
-            fondo ya trae el logo arriba al centro, así que el título va
-            debajo y alineado con él — si no, quedaban la marca, la
-            etiqueta y el título como tres cosas apiladas peleándose. */}
+        {/* Centrado: la ilustración tiene el toro a la izquierda y el oso
+            a la derecha, con el centro oscuro y limpio. El título cae
+            justo en ese hueco, entre los dos animales. */}
         <div className="mx-auto mb-8 max-w-5xl px-6 text-center">
           <h2 className="font-display text-2xl font-medium text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
             Lo que dicen nuestros alumnos

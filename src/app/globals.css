@@ -81,6 +81,29 @@ body {
     linear-gradient(160deg, #0a1420, #101d14 80%);
   overflow: hidden;
 }
+/* Costura entre secciones ilustradas.
+   Alejo lo vio bajando por la página: donde terminaba una imagen y
+   empezaba la siguiente quedaba una línea horizontal dura, y las
+   secciones se leían como dos fotos pegadas en vez de una sola página.
+   Esto desvanece cada fondo ilustrado hacia el MISMO color en sus
+   bordes de arriba y abajo, así ambos lados de cada costura llegan al
+   mismo tono y el corte deja de existir.
+   El color es literal (no var(--bg)) a propósito: estas secciones son
+   oscuras en los dos temas, porque las ilustraciones lo son. */
+.fundido-vertical::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    #0b0e14 0%,
+    transparent 16%,
+    transparent 84%,
+    #0b0e14 100%
+  );
+}
+
 /* Carrusel de testimonios (Testimonials Marquee) — dos filas que se
    desplazan solas en direcciones opuestas, como pidió Alejo ("de
    izquierda a derecha o de derecha a izquierda") para que no se apilen

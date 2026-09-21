@@ -42,7 +42,7 @@ export default async function Home() {
             entraría de golpe un segundo después — justo la sensación de
             lentitud que queremos evitar. El degradado de `.hero-brand-bg`
             queda debajo como base mientras la imagen llega. */}
-        <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div aria-hidden className="fundido-vertical pointer-events-none absolute inset-0">
           <Image
             src="/fondo-hero.jpg"
             alt=""
@@ -84,7 +84,7 @@ export default async function Home() {
           oso. Carga diferida (sin `priority`) — a esta altura de la
           página el usuario ya tiene que haber bajado. */}
       <div className="relative flex-1 overflow-hidden bg-bg">
-        <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div aria-hidden className="fundido-vertical pointer-events-none absolute inset-0">
           <Image
             src="/fondo-grafico.jpg"
             alt=""
