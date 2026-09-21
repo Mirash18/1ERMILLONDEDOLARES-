@@ -61,7 +61,7 @@ export default async function Home() {
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(5,12,10,0.55),rgba(5,12,10,0.12)_45%,transparent_65%)]" />
         </div>
         <div className="relative mx-auto w-full max-w-5xl px-6 py-16 sm:py-20">
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
+          <p className="mb-3 font-sans text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
             Análisis, señales y educación
           </p>
           <h1 className="max-w-2xl text-balance font-display text-4xl font-medium leading-tight text-white sm:text-5xl">
@@ -73,7 +73,7 @@ export default async function Home() {
           </p>
           <Link
             href="/introduccion"
-            className="mt-7 inline-flex w-fit items-center rounded-md bg-[#4c8fd1] px-5 py-2.5 font-mono text-sm font-medium text-[#06111d] transition-colors hover:bg-[#5fa0e0]"
+            className="mt-7 inline-flex w-fit items-center rounded-md bg-[#4c8fd1] px-5 py-2.5 font-sans text-sm font-medium text-[#06111d] transition-colors hover:bg-[#5fa0e0]"
           >
             Empezar en la academia
           </Link>
@@ -125,14 +125,14 @@ export default async function Home() {
                 key={m.title}
                 className="flex flex-col gap-2 rounded-lg border border-border bg-panel p-5"
               >
-                <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-gold">
+                <span className="font-sans text-[11px] uppercase tracking-[0.1em] text-gold">
                   {m.tag}
                 </span>
                 <h3 className="font-display text-lg font-medium text-text">
                   {m.title}
                 </h3>
                 <p className="text-sm text-text-soft">{m.body}</p>
-                <span className="mt-1 w-fit rounded border border-border bg-input px-2 py-1 font-mono text-[10px] text-text-soft">
+                <span className="mt-1 w-fit rounded border border-border bg-input px-2 py-1 font-sans text-[10px] text-text-soft">
                   {m.status}
                 </span>
               </div>
@@ -141,7 +141,7 @@ export default async function Home() {
         </section>
       </div>
 
-      <footer className="border-t border-border px-6 py-6 text-center font-mono text-[11px] text-text-soft">
+      <footer className="border-t border-border px-6 py-6 text-center font-sans text-[11px] text-text-soft">
         1er Millón de Dólares — contenido educativo, no es asesoría financiera.
       </footer>
     </div>

@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+// Nota: las etiquetas de UI del sitio público usan `font-sans` (Figtree),
+// no `font-sans` — el monoespaciado se reserva para números y datos
+// (precios, gráfico), donde sí aporta. Ver docs/ARQUITECTURA.md.
 
 /**
  * Botones de sesión para el header. Si Clerk no está configurado (llave
@@ -34,7 +37,7 @@ export function AuthStatus({
         <SignInButton mode="modal">
           <button
             type="button"
-            className={`font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text ${
+            className={`font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text ${
               apilado ? "py-2 text-left" : ""
             }`}
           >
@@ -44,7 +47,7 @@ export function AuthStatus({
         <SignUpButton mode="modal">
           <button
             type="button"
-            className={`rounded border border-gold/40 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold/10 ${
+            className={`rounded border border-gold/40 px-3 py-1.5 font-sans text-[11px] uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold/10 ${
               apilado ? "py-2.5 text-center" : ""
             }`}
           >
@@ -55,7 +58,7 @@ export function AuthStatus({
       <Show when="signed-in">
         <Link
           href="/introduccion"
-          className={`font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text ${
+          className={`font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text ${
             apilado ? "py-2" : ""
           }`}
         >

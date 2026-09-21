@@ -56,7 +56,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">
-          <span className="hidden items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-text-soft lg:inline-flex">
+          <span className="hidden items-center gap-2 font-sans text-[10px] uppercase tracking-[0.14em] text-text-soft lg:inline-flex">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold/70" />
             en construcción · fase 1
           </span>
@@ -64,7 +64,7 @@ export function SiteHeader() {
             <Link
               key={link.href}
               href={link.href}
-              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
+              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
             >
               {link.label}
             </Link>
@@ -113,7 +113,7 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className="border-b border-border/60 py-3 font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
+                className="border-b border-border/60 py-3 font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
               >
                 {link.label}
               </Link>
@@ -121,7 +121,7 @@ export function SiteHeader() {
             <div className="py-4">
               <AuthStatus orientation="stack" />
             </div>
-            <span className="flex items-center gap-2 pb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-text-soft/70">
+            <span className="flex items-center gap-2 pb-3 font-sans text-[10px] uppercase tracking-[0.14em] text-text-soft/70">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold/70" />
               en construcción · fase 1
             </span>
