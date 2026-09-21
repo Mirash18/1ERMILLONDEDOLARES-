@@ -5,77 +5,43 @@ import type { Testimonial } from "@/lib/testimonials";
 // (@keyframes en globals.css), no hace falta JS ni "use client" para
 // nada de esto.
 
-// Velas del fondo. Se calculan una sola vez al cargar el módulo, con
-// senos en vez de Math.random(): tiene que dar EXACTAMENTE lo mismo en
-// el servidor y en el navegador o React se queja de que el HTML no
-// coincide. Por eso también van redondeadas a enteros — así no depende
-// de decimales que podrían diferir entre motores.
-const CANDLE_COUNT = 30;
-const CANDLES = Array.from({ length: CANDLE_COUNT }, (_, i) => {
-  const centro = 95 + Math.sin(i * 0.5) * 30 + Math.sin(i * 1.9) * 14;
-  const cuerpo = 14 + ((i * 7) % 4) * 9;
-  const mecha = 8 + ((i * 5) % 3) * 7;
-  const sube = Math.sin(i * 1.9) >= 0;
-  return {
-    x: Math.round(18 + i * 40),
-    top: Math.round(centro - cuerpo / 2),
-    alto: Math.round(cuerpo),
-    mechaArriba: Math.round(mecha),
-    mechaAbajo: Math.round(mecha * 0.7),
-    sube,
-  };
-});
-
 /**
- * Fondo de la sección de testimonios: velas verdes y rojas como las de
- * un gráfico real, y el toro y el oso del logo de fondo, en grande y
- * muy tenues — la alegoría clásica del mercado (idea de Alejo).
+ * Fondo de la sección de testimonios: la ilustración que mandó Alejo —
+ * velas verdes y rojas, el toro y el oso, la alegoría clásica del
+ * mercado. Reemplazó una versión dibujada a mano con SVG que se quedaba
+ * corta al lado de esta.
  *
- * Todo esto es decorativo: `aria-hidden` para que un lector de pantalla
- * no lo anuncie, y `pointer-events-none` para que no le robe clics a
- * las tarjetas que van encima.
+ * **Sin `priority` a propósito.** Esta sección va bien abajo de la
+ * página, así que la imagen se descarga recién cuando alguien baja
+ * hasta acá (carga diferida, el comportamiento por defecto de
+ * `next/image`). La primera pantalla — que es lo que decide si la
+ * página "se siente rápida" — no carga ni un byte de esto. Marcarla
+ * como prioritaria arruinaría justamente eso.
+ *
+ * `sizes="100vw"` porque ocupa todo el ancho: le dice a Next qué
+ * versión mandarle a cada dispositivo, para que un celular no se
+ * descargue la de 2000px.
+ *
+ * Todo el fondo es decorativo: `aria-hidden` para que un lector de
+ * pantalla no lo anuncie, y `pointer-events-none` para que no le robe
+ * clics a las tarjetas que van encima.
  */
 function TradingBackdrop() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
-      <div className="absolute inset-0 bg-[linear-gradient(160deg,#0a1420,#0d1a14_80%)]" />
-
+      <div className="absolute inset-0 bg-[#0b1410]" />
       <Image
-        src="/logo-icon.png"
+        src="/fondo-testimonios.jpg"
         alt=""
-        width={613}
-        height={486}
-        className="absolute right-[-60px] top-1/2 w-[380px] max-w-none -translate-y-1/2 opacity-[0.09] sm:w-[520px]"
+        fill
+        sizes="100vw"
+        className="object-cover object-bottom"
       />
-
-      <svg
-        className="absolute inset-x-0 bottom-0 h-[230px] w-full"
-        viewBox="0 0 1200 190"
-        preserveAspectRatio="none"
-      >
-        {CANDLES.map((c, i) => {
-          const color = c.sube ? "#089981" : "#f23645";
-          const centroX = c.x + 9;
-          return (
-            <g key={i} opacity="0.65">
-              <line
-                x1={centroX}
-                y1={c.top - c.mechaArriba}
-                x2={centroX}
-                y2={c.top + c.alto + c.mechaAbajo}
-                stroke={color}
-                strokeWidth="2"
-              />
-              <rect x={c.x} y={c.top} width="18" height={c.alto} fill={color} />
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* Difumina las velas hacia arriba para que no compitan con las
-          tarjetas. El color del degradado es el mismo con el que termina
-          el fondo de la sección, para que no se note el empalme. */}
-      <div className="absolute inset-x-0 bottom-0 h-[230px] bg-[linear-gradient(to_top,transparent,#0d1a14)]" />
+      {/* Vela de oscuridad encima: la ilustración tiene zonas claras
+          (el toro, los destellos) y las tarjetas van justo ahí. Esto
+          baja el contraste del fondo lo suficiente para que el texto de
+          las tarjetas siga siendo lo primero que se lee. */}
+      <div className="absolute inset-0 bg-black/25" />
     </div>
   );
 }
@@ -144,11 +110,12 @@ export function TestimonialsMarquee({ items }: { items: Testimonial[] }) {
     <section className="relative overflow-hidden pb-28 pt-16">
       <TradingBackdrop />
       <div className="relative">
-        <div className="mx-auto mb-8 max-w-5xl px-6">
-          <p className="mb-2 font-mono text-xs uppercase tracking-[0.14em] text-[#8fc4f2]">
-            Testimonios
-          </p>
-          <h2 className="font-display text-2xl font-medium text-white">
+        {/* Centrado y sin la etiqueta de "Testimonios": la ilustración de
+            fondo ya trae el logo arriba al centro, así que el título va
+            debajo y alineado con él — si no, quedaban la marca, la
+            etiqueta y el título como tres cosas apiladas peleándose. */}
+        <div className="mx-auto mb-8 max-w-5xl px-6 text-center">
+          <h2 className="font-display text-2xl font-medium text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
             Lo que dicen nuestros alumnos
           </h2>
         </div>
