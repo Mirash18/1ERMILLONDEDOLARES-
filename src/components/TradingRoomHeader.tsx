@@ -1,5 +1,38 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+/**
+ * Reloj en vivo de la bolsa de EE.UU. (hora de Nueva York), corriendo
+ * cada segundo sin importar si el mercado está abierto o cerrado — a
+ * pedido de Alejo, que notó que la hora estaba congelada. Usa la zona
+ * "America/New_York" (cambia solo entre EST y EDT según el horario de
+ * verano) y `en-US` para que la sigla salga como EST/EDT.
+ *
+ * Empieza en `null` para no romper la hidratación: el valor de hora del
+ * servidor y el del primer render del navegador serían instantes
+ * distintos. Se llena recién montado el componente.
+ */
+function useHoraNuevaYork(): string | null {
+  const [hora, setHora] = useState<string | null>(null);
+  useEffect(() => {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZoneName: "short",
+    });
+    const tick = () => setHora(fmt.format(new Date()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return hora;
+}
 
 /**
  * Header de la sala de trading con el logo de la marca y la información
@@ -12,7 +45,7 @@ export function TradingRoomHeader() {
   const price = 595.42;
   const priceChange = 12.85;
   const priceChangePercent = 2.2;
-  const lastUpdate = "14:35:22 EDT";
+  const lastUpdate = useHoraNuevaYork();
 
   const isPositive = priceChange >= 0;
 
@@ -61,10 +94,10 @@ export function TradingRoomHeader() {
         <div className="flex items-center gap-6">
           <div className="hidden sm:block">
             <p className="text-[10px] uppercase tracking-[0.1em] text-text-soft">
-              Hora
+              Hora NY
             </p>
             <p className="font-mono text-sm font-medium text-text">
-              {lastUpdate}
+              {lastUpdate ?? "—:—:—"}
             </p>
           </div>
           <Link
