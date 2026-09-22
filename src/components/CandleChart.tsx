@@ -1313,6 +1313,279 @@ function ObjectsDropdown({
   );
 }
 
+// Ojo abierto / tachado para el panel de Objetos (mostrar/ocultar).
+function EyeIcon({ on }: { on: boolean }) {
+  const common = {
+    width: 15,
+    height: 15,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  return on ? (
+    <svg {...common}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg {...common}>
+      <path d="M2 12s3.5-7 10-7c2.2 0 4.1.7 5.7 1.6" />
+      <path d="M22 12s-3.5 7-10 7c-2.2 0-4.1-.7-5.7-1.6" />
+      <line x1="3" y1="3" x2="21" y2="21" />
+    </svg>
+  );
+}
+
+// Panel lateral "Objetos" de la Sala de Trading — el "árbol de objetos"
+// que pidió Alejo: lista todo lo que hay en el gráfico (indicadores y
+// dibujos), cada uno con su icono y un ojo para mostrar/ocultar, y los
+// dibujos con su botón de borrar. Se abre/cierra desde el botón "Objetos"
+// del toolbar, igual que Favoritas.
+function ObjectsPanel({
+  palette,
+  onClose,
+  showMAs,
+  onToggleMAs,
+  showVolume,
+  onToggleVolume,
+  showBollinger,
+  onToggleBollinger,
+  showDayBands,
+  onToggleDayBands,
+  horizontalLines,
+  trendLines,
+  measureLines,
+  regressionLines,
+  textBoxes,
+  hiddenDrawings,
+  onToggleVisible,
+  onRemoveHorizontalLine,
+  onRemoveTrendLine,
+  onRemoveMeasureLine,
+  onRemoveRegressionLine,
+  onRemoveTextBox,
+}: {
+  palette: Palette;
+  onClose: () => void;
+  showMAs: boolean;
+  onToggleMAs: () => void;
+  showVolume: boolean;
+  onToggleVolume: () => void;
+  showBollinger: boolean;
+  onToggleBollinger: () => void;
+  showDayBands: boolean;
+  onToggleDayBands: () => void;
+  horizontalLines: { id: string; price: number }[];
+  trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
+  measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
+  regressionLines: { id: string; fromLogical: number; toLogical: number }[];
+  textBoxes: TextBoxState[];
+  hiddenDrawings: Set<string>;
+  onToggleVisible: (
+    kind: "horizontal" | "trend" | "measure" | "regression" | "text",
+    id: string,
+    price?: number
+  ) => void;
+  onRemoveHorizontalLine: (id: string) => void;
+  onRemoveTrendLine: (id: string) => void;
+  onRemoveMeasureLine: (id: string) => void;
+  onRemoveRegressionLine: (id: string) => void;
+  onRemoveTextBox: (id: string) => void;
+}) {
+  // Fila de indicador: icono de línea + nombre + ojo (sin borrar, los
+  // indicadores no se borran, solo se ocultan).
+  const IndicatorRow = ({
+    color,
+    label,
+    on,
+    onToggle,
+  }: {
+    color: string;
+    label: string;
+    on: boolean;
+    onToggle: () => void;
+  }) => (
+    <div className="group flex items-center gap-2 rounded px-2 py-1.5">
+      <span className="inline-block h-[2px] w-3.5 shrink-0" style={{ backgroundColor: color }} />
+      <span className="flex-1 truncate font-mono text-xs" style={{ color: palette.buttonText, opacity: on ? 1 : 0.5 }}>
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        title={on ? "Ocultar" : "Mostrar"}
+        aria-label={on ? `Ocultar ${label}` : `Mostrar ${label}`}
+        style={{ color: on ? palette.buttonText : palette.textSoft }}
+      >
+        <EyeIcon on={on} />
+      </button>
+    </div>
+  );
+
+  // Fila de dibujo: icono del tipo + nombre + ojo + borrar.
+  const DrawRow = ({
+    kind,
+    id,
+    label,
+    price,
+    onRemove,
+  }: {
+    kind: "horizontal" | "trend" | "measure" | "regression" | "text";
+    id: string;
+    label: string;
+    price?: number;
+    onRemove: () => void;
+  }) => {
+    const visible = !hiddenDrawings.has(id);
+    return (
+      <div className="group flex items-center gap-2 rounded px-2 py-1.5">
+        <span
+          className="shrink-0"
+          style={{ color: palette.textSoft, opacity: visible ? 1 : 0.5 }}
+        >
+          <DrawToolIcon tool={kind} />
+        </span>
+        <span
+          className="flex-1 truncate font-mono text-xs"
+          style={{ color: palette.buttonText, opacity: visible ? 1 : 0.5 }}
+        >
+          {label}
+        </span>
+        <button
+          type="button"
+          onClick={() => onToggleVisible(kind, id, price)}
+          title={visible ? "Ocultar" : "Mostrar"}
+          aria-label={visible ? `Ocultar ${label}` : `Mostrar ${label}`}
+          style={{ color: visible ? palette.buttonText : palette.textSoft }}
+        >
+          <EyeIcon on={visible} />
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Borrar"
+          aria-label={`Borrar ${label}`}
+          className="opacity-0 transition-opacity group-hover:opacity-100"
+          style={{ color: palette.textSoft }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  };
+
+  const sinDibujos =
+    horizontalLines.length === 0 &&
+    trendLines.length === 0 &&
+    measureLines.length === 0 &&
+    regressionLines.length === 0 &&
+    textBoxes.length === 0;
+
+  return (
+    <div
+      className="flex w-72 shrink-0 flex-col rounded-lg border p-3"
+      style={{ backgroundColor: palette.wrapperBg, borderColor: palette.wrapperBorder }}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span
+          className="font-mono text-[11px] uppercase tracking-[0.14em]"
+          style={{ color: palette.textSoft }}
+        >
+          Objetos
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-6 w-6 items-center justify-center rounded font-mono text-sm"
+          style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
+          title="Cerrar"
+          aria-label="Cerrar panel de objetos"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <p
+          className="px-2 pb-1 pt-1 font-mono text-[10px] uppercase tracking-wide opacity-60"
+          style={{ color: palette.textSoft }}
+        >
+          Indicadores
+        </p>
+        <IndicatorRow color="#EAB308" label="4 medias móviles" on={showMAs} onToggle={onToggleMAs} />
+        <IndicatorRow color={palette.textSoft} label="Volumen" on={showVolume} onToggle={onToggleVolume} />
+        <IndicatorRow color={BOLLINGER_COLOR} label="Bollinger (20, 2σ)" on={showBollinger} onToggle={onToggleBollinger} />
+        <IndicatorRow color="rgba(212,175,55,0.6)" label="Fondos por día" on={showDayBands} onToggle={onToggleDayBands} />
+
+        <p
+          className="px-2 pb-1 pt-3 font-mono text-[10px] uppercase tracking-wide opacity-60"
+          style={{ color: palette.textSoft }}
+        >
+          Dibujos
+        </p>
+        {sinDibujos && (
+          <p className="px-2 py-1 font-mono text-[11px] opacity-60" style={{ color: palette.textSoft }}>
+            Todavía no has dibujado nada.
+          </p>
+        )}
+        {horizontalLines.map((l) => (
+          <DrawRow
+            key={l.id}
+            kind="horizontal"
+            id={l.id}
+            price={l.price}
+            label={`Línea ${l.price.toFixed(2)}`}
+            onRemove={() => onRemoveHorizontalLine(l.id)}
+          />
+        ))}
+        {trendLines.map((l) => (
+          <DrawRow
+            key={l.id}
+            kind="trend"
+            id={l.id}
+            label={`Tendencia ${l.p1.price.toFixed(2)} → ${l.p2.price.toFixed(2)}`}
+            onRemove={() => onRemoveTrendLine(l.id)}
+          />
+        ))}
+        {measureLines.map((l) => {
+          const diff = l.p2.price - l.p1.price;
+          const pct = l.p1.price !== 0 ? (diff / l.p1.price) * 100 : 0;
+          return (
+            <DrawRow
+              key={l.id}
+              kind="measure"
+              id={l.id}
+              label={`Regla ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}% · ${l.bars}b`}
+              onRemove={() => onRemoveMeasureLine(l.id)}
+            />
+          );
+        })}
+        {regressionLines.map((l) => (
+          <DrawRow
+            key={l.id}
+            kind="regression"
+            id={l.id}
+            label={`Regresión (${Math.abs(Math.round(l.toLogical - l.fromLogical))} barras)`}
+            onRemove={() => onRemoveRegressionLine(l.id)}
+          />
+        ))}
+        {textBoxes.map((t) => (
+          <DrawRow
+            key={t.id}
+            kind="text"
+            id={t.id}
+            label={`Texto${t.text ? `: ${t.text.slice(0, 16)}` : " (vacío)"}`}
+            onRemove={() => onRemoveTextBox(t.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CandleChart({
   // Para la Sala de Trading (gráfico a pantalla completa): en vez del alto
   // fijo de 420px, el panel ocupa toda la altura que le dé su contenedor.
@@ -1383,6 +1656,19 @@ export function CandleChart({
   // Fondos alternados por día (ver DayBandsPrimitive) — apagado por
   // defecto, igual que Bollinger.
   const [showDayBands, setShowDayBands] = useState(false);
+  // Panel lateral "Objetos" (Sala de Trading) — como el de Favoritas, pero
+  // lista todo lo que hay en el gráfico (indicadores + dibujos) con un ojo
+  // para mostrar/ocultar cada uno. A pedido de Alejo (su "árbol de objetos"
+  // de TradingView). Empieza oculto.
+  const [showObjectsPanel, setShowObjectsPanel] = useState(false);
+  // Las 4 medias móviles (PM 20/40/100/200) se prenden/apagan como grupo,
+  // igual que TradingView las lista como "4 SMAs".
+  const [showMAs, setShowMAs] = useState(true);
+  // Ids de dibujos ocultados con el ojo (siguen existiendo, solo no se
+  // pintan). Se desprende/reengancha la primitiva sin borrarla.
+  const [hiddenDrawings, setHiddenDrawings] = useState<Set<string>>(
+    () => new Set()
+  );
 
   const palette = PALETTES[theme];
 
@@ -1934,6 +2220,7 @@ export function CandleChart({
     setTrendLines([]);
     setMeasureLines([]);
     setRegressionLines([]);
+    setHiddenDrawings(new Set());
     // Se cambió de símbolo: marcar "sin hidratar" para que el efecto de
     // carga vuelva a traer los dibujos guardados del símbolo nuevo cuando
     // lleguen sus velas (ver persistencia más abajo).
@@ -1972,6 +2259,13 @@ export function CandleChart({
   useEffect(() => {
     volumeSeriesRef.current?.applyOptions({ visible: showVolume });
   }, [showVolume]);
+
+  // Mostrar/ocultar las 4 medias móviles como grupo (ojo del panel Objetos).
+  useEffect(() => {
+    for (const s of Object.values(maSeriesRef.current)) {
+      s.applyOptions({ visible: showMAs });
+    }
+  }, [showMAs]);
 
   useEffect(() => {
     bbUpperRef.current?.applyOptions({ visible: showBollinger });
@@ -2239,6 +2533,53 @@ export function CandleChart({
     delete regressionObjectsRef.current[id];
     setRegressionLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
+
+  // Mostrar/ocultar un dibujo con el ojo del panel Objetos, sin borrarlo.
+  // Para las primitivas (tendencia/regla/regresión) se desprende y se
+  // vuelve a enganchar; la línea horizontal se quita y se recrea desde su
+  // precio guardado; el texto se controla al renderizar (hiddenDrawings).
+  type DrawKind = "horizontal" | "trend" | "measure" | "regression" | "text";
+  const toggleDrawingVisible = useCallback(
+    (kind: DrawKind, id: string, price?: number) => {
+      const series = candleSeriesRef.current;
+      if (!series) return;
+      setHiddenDrawings((prev) => {
+        const next = new Set(prev);
+        const ocultar = !next.has(id);
+        if (ocultar) next.add(id);
+        else next.delete(id);
+        if (kind === "trend") {
+          const p = trendLineObjectsRef.current[id];
+          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
+        } else if (kind === "measure") {
+          const p = measureObjectsRef.current[id];
+          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
+        } else if (kind === "regression") {
+          const p = regressionObjectsRef.current[id];
+          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
+        } else if (kind === "horizontal") {
+          if (ocultar) {
+            const pl = horizontalLineObjectsRef.current[id];
+            if (pl) series.removePriceLine(pl);
+            delete horizontalLineObjectsRef.current[id];
+          } else if (price !== undefined) {
+            horizontalLineObjectsRef.current[id] = series.createPriceLine({
+              price,
+              color: "#60A5FA",
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: "",
+            });
+          }
+        }
+        // "text": no hay primitiva; el <div> se muestra/oculta según
+        // hiddenDrawings al renderizar los cuadros de texto.
+        return next;
+      });
+    },
+    []
+  );
 
   // --- Persistencia de dibujos (localStorage, por símbolo) ---
   // Alejo lo reporto: dibujaba (linea, tendencia, regresion), recargaba la
@@ -2679,22 +3020,40 @@ export function CandleChart({
             onToggleInvert={() => setInvertScale((v) => !v)}
             palette={palette}
           />
-          <ObjectsDropdown
-            showBollinger={showBollinger}
-            showVolume={showVolume}
-            showDayBands={showDayBands}
-            horizontalLines={horizontalLines}
-            onRemoveHorizontalLine={removeHorizontalLine}
-            trendLines={trendLines}
-            onRemoveTrendLine={removeTrendLine}
-            measureLines={measureLines}
-            onRemoveMeasureLine={removeMeasure}
-            regressionLines={regressionLines}
-            onRemoveRegressionLine={removeRegression}
-            textBoxes={textBoxes}
-            onRemoveTextBox={removeTextBox}
-            palette={palette}
-          />
+          {fillHeight ? (
+            // Sala de Trading: "Objetos" abre un panel lateral (árbol de
+            // objetos con ojos de mostrar/ocultar), como pidió Alejo.
+            <button
+              onClick={() => setShowObjectsPanel((v) => !v)}
+              className="rounded px-2.5 py-1.5 font-mono text-xs transition-colors"
+              style={{
+                backgroundColor: showObjectsPanel ? palette.buttonActiveBg : palette.buttonBg,
+                color: showObjectsPanel ? palette.buttonActiveText : palette.buttonText,
+              }}
+              title="Mostrar u ocultar el panel de objetos"
+              aria-label="Mostrar u ocultar el panel de objetos"
+              aria-pressed={showObjectsPanel}
+            >
+              Objetos
+            </button>
+          ) : (
+            <ObjectsDropdown
+              showBollinger={showBollinger}
+              showVolume={showVolume}
+              showDayBands={showDayBands}
+              horizontalLines={horizontalLines}
+              onRemoveHorizontalLine={removeHorizontalLine}
+              trendLines={trendLines}
+              onRemoveTrendLine={removeTrendLine}
+              measureLines={measureLines}
+              onRemoveMeasureLine={removeMeasure}
+              regressionLines={regressionLines}
+              onRemoveRegressionLine={removeRegression}
+              textBoxes={textBoxes}
+              onRemoveTextBox={removeTextBox}
+              palette={palette}
+            />
+          )}
           {fillHeight && (
             <button
               onClick={() => setShowWatchlist((v) => !v)}
@@ -2852,6 +3211,7 @@ export function CandleChart({
           {textBoxes.map((box) => {
             const pos = textBoxPixels[box.id];
             if (!pos) return null;
+            if (hiddenDrawings.has(box.id)) return null;
             return (
               <div
                 key={box.id}
@@ -2958,14 +3318,43 @@ export function CandleChart({
 
   if (!fillHeight) return chartPanel;
 
-  // Sala de Trading: el botón "★ Favoritas" del toolbar despliega y
-  // esconde el panel — no ocupa espacio hasta que alguien lo pide.
-  if (!showWatchlist) return chartPanel;
+  // Sala de Trading: los paneles laterales (Favoritas y Objetos) se abren
+  // y cierran cada uno desde su botón del toolbar — no ocupan espacio
+  // hasta que alguien los pide, y pueden estar ambos abiertos a la vez.
+  if (!showWatchlist && !showObjectsPanel) return chartPanel;
 
   return (
     <div className="flex h-full gap-3">
       {chartPanel}
-      <Watchlist symbol={symbol} onSelect={setSymbol} palette={palette} />
+      {showObjectsPanel && (
+        <ObjectsPanel
+          palette={palette}
+          onClose={() => setShowObjectsPanel(false)}
+          showMAs={showMAs}
+          onToggleMAs={() => setShowMAs((v) => !v)}
+          showVolume={showVolume}
+          onToggleVolume={() => setShowVolume((v) => !v)}
+          showBollinger={showBollinger}
+          onToggleBollinger={() => setShowBollinger((v) => !v)}
+          showDayBands={showDayBands}
+          onToggleDayBands={() => setShowDayBands((v) => !v)}
+          horizontalLines={horizontalLines}
+          trendLines={trendLines}
+          measureLines={measureLines}
+          regressionLines={regressionLines}
+          textBoxes={textBoxes}
+          hiddenDrawings={hiddenDrawings}
+          onToggleVisible={toggleDrawingVisible}
+          onRemoveHorizontalLine={removeHorizontalLine}
+          onRemoveTrendLine={removeTrendLine}
+          onRemoveMeasureLine={removeMeasure}
+          onRemoveRegressionLine={removeRegression}
+          onRemoveTextBox={removeTextBox}
+        />
+      )}
+      {showWatchlist && (
+        <Watchlist symbol={symbol} onSelect={setSymbol} palette={palette} />
+      )}
     </div>
   );
 }
