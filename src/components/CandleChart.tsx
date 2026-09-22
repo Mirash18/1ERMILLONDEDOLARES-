@@ -1913,6 +1913,22 @@ export function CandleChart({
   const liveTrendRef = useRef<TrendLinePrimitive | null>(null);
   const liveArrowRef = useRef<ArrowPrimitive | null>(null);
   const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
+  // Arrastre de una flecha ENTERA con clic derecho sostenido (mover, no
+  // reorientar). Guarda su id, los píxeles de sus dos extremos al empezar,
+  // el punto del cursor al empezar y si de verdad se movió (para decidir en
+  // el mouseup: si se movió = mover; si no = abrir el menú de color).
+  const rightDragArrowRef = useRef<{
+    id: string;
+    p1x: number;
+    p1y: number;
+    p2x: number;
+    p2y: number;
+    startClientX: number;
+    startClientY: number;
+    menuX: number;
+    menuY: number;
+    moved: boolean;
+  } | null>(null);
   // Copia siempre actualizada de `textBoxes` — la necesitan los handlers de
   // arrastre/redimensión (agregados a `window`, creados fuera del ciclo de
   // renders de React) para leer la posición/tamaño de partida sin quedarse
@@ -2205,9 +2221,43 @@ export function CandleChart({
     }
     chart.subscribeCrosshairMove(onCrosshairMove);
 
-    function onMouseDown() {
+    function onMouseDown(e: MouseEvent) {
       const tool = drawToolRef.current;
       const series = candleSeriesRef.current;
+
+      // Botón derecho sostenido sobre una flecha = mover la flecha entera.
+      // Se arma el arrastre acá; el mousemove la traslada y el mouseup
+      // decide (si se movió = quedó movida; si no = abrir el menú de color).
+      if (e.button === 2) {
+        const pixel = lastHoverPixelRef.current;
+        const chart = chartRef.current;
+        if (!pixel || !chart || !series) return;
+        for (const [id, primitive] of Object.entries(arrowObjectsRef.current)) {
+          if (!primitive.hitTestBody(pixel.x, pixel.y)) continue;
+          const p1x = logicalToX(chart, primitive.p1.logical);
+          const p1y = series.priceToCoordinate(primitive.p1.price);
+          const p2x = logicalToX(chart, primitive.p2.logical);
+          const p2y = series.priceToCoordinate(primitive.p2.price);
+          if (p1x === null || p1y === null || p2x === null || p2y === null) return;
+          rightDragArrowRef.current = {
+            id,
+            p1x,
+            p1y,
+            p2x,
+            p2y,
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            menuX: e.offsetX,
+            menuY: e.offsetY,
+            moved: false,
+          };
+          chart.applyOptions({ handleScroll: false, handleScale: false });
+          return;
+        }
+        return;
+      }
+      // De aquí en adelante, solo el botón izquierdo dibuja/edita.
+      if (e.button !== 0) return;
 
       // Sin herramienta activa: el único clic que hace algo es sobre el
       // tirador de una tendencia/regla ya dibujada, para agarrarla y
@@ -2292,7 +2342,49 @@ export function CandleChart({
       }
     }
 
+    // Traslada la flecha entera mientras se arrastra con el botón derecho.
+    function onRightDragMove(e: MouseEvent) {
+      const drag = rightDragArrowRef.current;
+      const chart = chartRef.current;
+      const series = candleSeriesRef.current;
+      if (!drag || !chart || !series) return;
+      const dx = e.clientX - drag.startClientX;
+      const dy = e.clientY - drag.startClientY;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      const ts = chart.timeScale();
+      const toPoint = (px: number, py: number): DrawPoint | null => {
+        const logical = ts.coordinateToLogical(px);
+        const price = series.coordinateToPrice(py);
+        if (logical === null || price === null) return null;
+        return { logical: logical as number, price };
+      };
+      const np1 = toPoint(drag.p1x + dx, drag.p1y + dy);
+      const np2 = toPoint(drag.p2x + dx, drag.p2y + dy);
+      if (np1 && np2) arrowObjectsRef.current[drag.id]?.setPoints(np1, np2);
+    }
+    window.addEventListener("mousemove", onRightDragMove);
+
     function onMouseUp() {
+      // Fin del arrastre derecho de una flecha entera: si se movió, se
+      // confirma la nueva posición en el estado; si no se movió (fue un
+      // clic derecho seco), se abre el menú de color. En ambos casos se
+      // reactiva el paneo/zoom.
+      const rd = rightDragArrowRef.current;
+      if (rd) {
+        rightDragArrowRef.current = null;
+        chart.applyOptions({ handleScroll: true, handleScale: true });
+        const primitive = arrowObjectsRef.current[rd.id];
+        if (rd.moved && primitive) {
+          const { p1, p2 } = primitive;
+          setArrowLines((prev) =>
+            prev.map((l) => (l.id === rd.id ? { ...l, p1, p2 } : l))
+          );
+        } else {
+          setArrowMenu({ x: rd.menuX, y: rd.menuY, id: rd.id });
+        }
+        return;
+      }
+
       // Se estaba arrastrando el tirador de un dibujo existente, no
       // dibujando uno nuevo: confirma la posición final en el estado de
       // React (para que el panel de Objetos y cualquier futura persistencia
@@ -2371,16 +2463,15 @@ export function CandleChart({
     // gráfico (arrastraron hacia afuera) el arrastre igual debe terminar.
     window.addEventListener("mouseup", onMouseUp);
 
-    // Clic derecho sobre una flecha → menú para cambiarle el color
-    // (verde/rojo) o borrarla. Usa el último píxel donde estaba el cursor
-    // (el crosshair ya lo registró) para saber sobre qué flecha se hizo.
+    // Clic derecho sobre una flecha: se suprime el menú del navegador. El
+    // menú de color propio lo abre onMouseUp cuando el clic derecho fue
+    // "seco" (sin arrastre) — ver rightDragArrowRef.
     function onContextMenu(e: MouseEvent) {
       const pixel = lastHoverPixelRef.current;
       if (!pixel) return;
-      for (const [id, primitive] of Object.entries(arrowObjectsRef.current)) {
+      for (const primitive of Object.values(arrowObjectsRef.current)) {
         if (primitive.hitTestBody(pixel.x, pixel.y)) {
           e.preventDefault();
-          setArrowMenu({ x: e.offsetX, y: e.offsetY, id });
           return;
         }
       }
@@ -2392,6 +2483,7 @@ export function CandleChart({
       chart.unsubscribeCrosshairMove(onCrosshairMove);
       containerRef.current?.removeEventListener("mousedown", onMouseDown);
       containerRef.current?.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("mousemove", onRightDragMove);
       window.removeEventListener("mouseup", onMouseUp);
       observer.disconnect();
       chart.remove();
