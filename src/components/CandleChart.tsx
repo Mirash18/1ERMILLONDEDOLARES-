@@ -156,6 +156,7 @@ type DrawTool =
   | "horizontal"
   | "trend"
   | "arrow"
+  | "box"
   | "measure"
   | "regression"
   | "text";
@@ -165,7 +166,14 @@ type DrawTool =
 // que trae al dibujarse.
 const MARK_GREEN = "#22C55E";
 const MARK_RED = "#F23645";
-const MARK_COLORS = [MARK_GREEN, MARK_RED];
+
+// Relleno de los cuadros — verde/rojo vivos (no pálidos), a pedido de Alejo
+// ("nos sirven para dar ejemplos en videollamada"). Semitransparentes para
+// no tapar las velas, pero con suficiente saturación para que se vean.
+const BOX_FILL: Record<string, string> = {
+  [MARK_GREEN]: "rgba(34,197,94,0.30)",
+  [MARK_RED]: "rgba(242,54,69,0.30)",
+};
 
 // Cuadro de texto libre — a diferencia de los demás dibujos, no vive como
 // ISeriesPrimitive (canvas), sino como un <div> de verdad superpuesto al
@@ -394,6 +402,105 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
                 context.beginPath();
                 context.arc(x1, y1, 4.5, 0, Math.PI * 2);
                 context.fill();
+                context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
+
+// Cuadro — un rectángulo de color (verde/rojo) para marcar zonas del
+// gráfico y dar ejemplos. Igual que la flecha: se traza arrastrando de una
+// esquina a la opuesta, se puede reagarrar cualquiera de esas dos esquinas
+// para redimensionarlo, mover entero con clic derecho sostenido, y cambiar
+// su color con clic derecho seco.
+class BoxPrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+
+  constructor(
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    public p1: DrawPoint,
+    public p2: DrawPoint,
+    public color: string = MARK_GREEN
+  ) {}
+
+  attached(param: { requestUpdate: () => void }): void {
+    this.requestUpdate = param.requestUpdate;
+  }
+
+  setPoints(p1: DrawPoint, p2: DrawPoint): void {
+    this.p1 = p1;
+    this.p2 = p2;
+    this.requestUpdate?.();
+  }
+
+  setColor(color: string): void {
+    this.color = color;
+    this.requestUpdate?.();
+  }
+
+  hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    const { chart, series, p1, p2 } = this;
+    for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
+      const px = logicalToX(chart, p.logical);
+      const py = series.priceToCoordinate(p.price);
+      if (px === null || py === null) continue;
+      if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
+    }
+    return null;
+  }
+
+  // ¿El clic cayó dentro del rectángulo? Para el clic derecho (color/mover).
+  hitTestBody(x: number, y: number): boolean {
+    const { chart, series, p1, p2 } = this;
+    const x1 = logicalToX(chart, p1.logical);
+    const y1 = series.priceToCoordinate(p1.price);
+    const x2 = logicalToX(chart, p2.logical);
+    const y2 = series.priceToCoordinate(p2.price);
+    if (x1 === null || y1 === null || x2 === null || y2 === null) return false;
+    return (
+      x >= Math.min(x1, x2) &&
+      x <= Math.max(x1, x2) &&
+      y >= Math.min(y1, y2) &&
+      y <= Math.max(y1, y2)
+    );
+  }
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const primitive = this;
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw(target: CanvasRenderingTarget2D) {
+              const { chart, series, p1, p2, color } = primitive;
+              const x1 = logicalToX(chart, p1.logical);
+              const y1 = series.priceToCoordinate(p1.price);
+              const x2 = logicalToX(chart, p2.logical);
+              const y2 = series.priceToCoordinate(p2.price);
+              if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+              const left = Math.min(x1, x2);
+              const top = Math.min(y1, y2);
+              const w = Math.abs(x2 - x1);
+              const h = Math.abs(y2 - y1);
+              target.useMediaCoordinateSpace(({ context }) => {
+                context.save();
+                context.fillStyle = BOX_FILL[color] ?? "rgba(34,197,94,0.30)";
+                context.fillRect(left, top, w, h);
+                context.strokeStyle = color;
+                context.lineWidth = 2;
+                context.strokeRect(left, top, w, h);
+                // Manijas en las dos esquinas que lo definen.
+                context.fillStyle = color;
+                for (const [px, py] of [[x1, y1], [x2, y2]] as const) {
+                  context.beginPath();
+                  context.arc(px, py, 4.5, 0, Math.PI * 2);
+                  context.fill();
+                }
                 context.restore();
               });
             },
@@ -1115,6 +1222,7 @@ const DRAW_TOOLS = [
   { key: "horizontal" as const, label: "Horizontal", hint: "Un clic marca el precio" },
   { key: "trend" as const, label: "Tendencia", hint: "Clic, arrastra y suelta" },
   { key: "arrow" as const, label: "Flecha", hint: "Arrastra hacia donde apunta · clic derecho = color" },
+  { key: "box" as const, label: "Cuadro", hint: "Arrastra para el tamaño · clic derecho = color" },
   { key: "measure" as const, label: "Regla", hint: "Clic, arrastra y suelta" },
   { key: "regression" as const, label: "Regresión", hint: "Clic, arrastra y suelta" },
   { key: "text" as const, label: "Texto", hint: "Un clic coloca el cuadro" },
@@ -1179,6 +1287,12 @@ function DrawToolIcon({ tool }: { tool: Exclude<DrawTool, "none"> }) {
         <svg {...common}>
           <line x1="4" y1="14" x2="14" y2="4" />
           <polyline points="8,4 14,4 14,10" />
+        </svg>
+      );
+    case "box":
+      return (
+        <svg {...common}>
+          <rect x="3" y="4" width="12" height="10" rx="1" />
         </svg>
       );
   }
@@ -1508,6 +1622,7 @@ function ObjectsPanel({
   horizontalLines,
   trendLines,
   arrowLines,
+  boxShapes,
   measureLines,
   regressionLines,
   textBoxes,
@@ -1516,6 +1631,7 @@ function ObjectsPanel({
   onRemoveHorizontalLine,
   onRemoveTrendLine,
   onRemoveArrow,
+  onRemoveBox,
   onRemoveMeasureLine,
   onRemoveRegressionLine,
   onRemoveTextBox,
@@ -1533,18 +1649,20 @@ function ObjectsPanel({
   horizontalLines: { id: string; price: number }[];
   trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
   arrowLines: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
+  boxShapes: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
   measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
   regressionLines: { id: string; fromLogical: number; toLogical: number }[];
   textBoxes: TextBoxState[];
   hiddenDrawings: Set<string>;
   onToggleVisible: (
-    kind: "horizontal" | "trend" | "arrow" | "measure" | "regression" | "text",
+    kind: "horizontal" | "trend" | "arrow" | "box" | "measure" | "regression" | "text",
     id: string,
     price?: number
   ) => void;
   onRemoveHorizontalLine: (id: string) => void;
   onRemoveTrendLine: (id: string) => void;
   onRemoveArrow: (id: string) => void;
+  onRemoveBox: (id: string) => void;
   onRemoveMeasureLine: (id: string) => void;
   onRemoveRegressionLine: (id: string) => void;
   onRemoveTextBox: (id: string) => void;
@@ -1587,7 +1705,7 @@ function ObjectsPanel({
     price,
     onRemove,
   }: {
-    kind: "horizontal" | "trend" | "arrow" | "measure" | "regression" | "text";
+    kind: "horizontal" | "trend" | "arrow" | "box" | "measure" | "regression" | "text";
     id: string;
     label: string;
     price?: number;
@@ -1635,6 +1753,7 @@ function ObjectsPanel({
     horizontalLines.length === 0 &&
     trendLines.length === 0 &&
     arrowLines.length === 0 &&
+    boxShapes.length === 0 &&
     measureLines.length === 0 &&
     regressionLines.length === 0 &&
     textBoxes.length === 0;
@@ -1712,6 +1831,15 @@ function ObjectsPanel({
             id={l.id}
             label={`Flecha ${l.color === MARK_RED ? "roja" : "verde"}`}
             onRemove={() => onRemoveArrow(l.id)}
+          />
+        ))}
+        {boxShapes.map((l) => (
+          <DrawRow
+            key={l.id}
+            kind="box"
+            id={l.id}
+            label={`Cuadro ${l.color === MARK_RED ? "rojo" : "verde"}`}
+            onRemove={() => onRemoveBox(l.id)}
           />
         ))}
         {measureLines.map((l) => {
@@ -1801,6 +1929,10 @@ export function CandleChart({
   const [arrowLines, setArrowLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
   >([]);
+  // Cuadros (marcar zonas) — mismo formato que las flechas.
+  const [boxShapes, setBoxShapes] = useState<
+    { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
+  >([]);
   const [measureLines, setMeasureLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
   >([]);
@@ -1840,7 +1972,7 @@ export function CandleChart({
   // Menú de clic derecho sobre una flecha, para cambiarle el color
   // (verde/rojo) o borrarla. `x`/`y` son píxeles dentro del panel.
   const [arrowMenu, setArrowMenu] = useState<
-    { x: number; y: number; id: string } | null
+    { x: number; y: number; id: string; kind: "arrow" | "box" } | null
   >(null);
 
   // Cerrar el menú de la flecha al hacer clic fuera o con Escape.
@@ -1872,6 +2004,7 @@ export function CandleChart({
   const horizontalLineObjectsRef = useRef<Record<string, IPriceLine>>({});
   const trendLineObjectsRef = useRef<Record<string, TrendLinePrimitive>>({});
   const arrowObjectsRef = useRef<Record<string, ArrowPrimitive>>({});
+  const boxObjectsRef = useRef<Record<string, BoxPrimitive>>({});
   const measureObjectsRef = useRef<Record<string, MeasurePrimitive>>({});
   const regressionObjectsRef = useRef<Record<string, RegressionChannelPrimitive>>({});
   // Se crea una sola vez (en el efecto que crea el gráfico) y se
@@ -1903,7 +2036,7 @@ export function CandleChart({
   // punto en vez de dibujar uno nuevo. Es lo que permite "subir o bajar" una
   // línea después de trazada, no solo trazarla una vez.
   const editingRef = useRef<{
-    kind: "trend" | "arrow" | "measure";
+    kind: "trend" | "arrow" | "box" | "measure";
     id: string;
     handle: "p1" | "p2";
   } | null>(null);
@@ -1912,12 +2045,14 @@ export function CandleChart({
   // o se descarta si el arrastre fue demasiado corto para ser intencional.
   const liveTrendRef = useRef<TrendLinePrimitive | null>(null);
   const liveArrowRef = useRef<ArrowPrimitive | null>(null);
+  const liveBoxRef = useRef<BoxPrimitive | null>(null);
   const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
   // Arrastre de una flecha ENTERA con clic derecho sostenido (mover, no
   // reorientar). Guarda su id, los píxeles de sus dos extremos al empezar,
   // el punto del cursor al empezar y si de verdad se movió (para decidir en
   // el mouseup: si se movió = mover; si no = abrir el menú de color).
   const rightDragArrowRef = useRef<{
+    kind: "arrow" | "box";
     id: string;
     p1x: number;
     p1y: number;
@@ -2192,6 +2327,15 @@ export function CandleChart({
               editing.handle === "p1" ? other : point
             );
           }
+        } else if (editing.kind === "box") {
+          const primitive = boxObjectsRef.current[editing.id];
+          if (primitive) {
+            const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
+            primitive.setPoints(
+              editing.handle === "p1" ? point : other,
+              editing.handle === "p1" ? other : point
+            );
+          }
         } else if (editing.kind === "measure") {
           const primitive = measureObjectsRef.current[editing.id];
           if (primitive) {
@@ -2212,6 +2356,8 @@ export function CandleChart({
         liveTrendRef.current?.setPoints(start, point);
       } else if (tool === "arrow") {
         liveArrowRef.current?.setPoints(start, point);
+      } else if (tool === "box") {
+        liveBoxRef.current?.setPoints(start, point);
       } else if (tool === "measure") {
         const bars = Math.abs(Math.round(point.logical) - Math.round(start.logical));
         liveMeasureRef.current?.setPoints(start, point, bars);
@@ -2232,27 +2378,37 @@ export function CandleChart({
         const pixel = lastHoverPixelRef.current;
         const chart = chartRef.current;
         if (!pixel || !chart || !series) return;
-        for (const [id, primitive] of Object.entries(arrowObjectsRef.current)) {
-          if (!primitive.hitTestBody(pixel.x, pixel.y)) continue;
-          const p1x = logicalToX(chart, primitive.p1.logical);
-          const p1y = series.priceToCoordinate(primitive.p1.price);
-          const p2x = logicalToX(chart, primitive.p2.logical);
-          const p2y = series.priceToCoordinate(primitive.p2.price);
-          if (p1x === null || p1y === null || p2x === null || p2y === null) return;
-          rightDragArrowRef.current = {
-            id,
-            p1x,
-            p1y,
-            p2x,
-            p2y,
-            startClientX: e.clientX,
-            startClientY: e.clientY,
-            menuX: e.offsetX,
-            menuY: e.offsetY,
-            moved: false,
-          };
-          chart.applyOptions({ handleScroll: false, handleScale: false });
-          return;
+        const marks: [
+          "arrow" | "box",
+          Record<string, ArrowPrimitive | BoxPrimitive>
+        ][] = [
+          ["arrow", arrowObjectsRef.current],
+          ["box", boxObjectsRef.current],
+        ];
+        for (const [kind, objs] of marks) {
+          for (const [id, primitive] of Object.entries(objs)) {
+            if (!primitive.hitTestBody(pixel.x, pixel.y)) continue;
+            const p1x = logicalToX(chart, primitive.p1.logical);
+            const p1y = series.priceToCoordinate(primitive.p1.price);
+            const p2x = logicalToX(chart, primitive.p2.logical);
+            const p2y = series.priceToCoordinate(primitive.p2.price);
+            if (p1x === null || p1y === null || p2x === null || p2y === null) return;
+            rightDragArrowRef.current = {
+              kind,
+              id,
+              p1x,
+              p1y,
+              p2x,
+              p2y,
+              startClientX: e.clientX,
+              startClientY: e.clientY,
+              menuX: e.offsetX,
+              menuY: e.offsetY,
+              moved: false,
+            };
+            chart.applyOptions({ handleScroll: false, handleScale: false });
+            return;
+          }
         }
         return;
       }
@@ -2279,6 +2435,14 @@ export function CandleChart({
           const handle = primitive.hitTestHandle(pixel.x, pixel.y);
           if (handle) {
             editingRef.current = { kind: "arrow", id, handle };
+            chart.applyOptions({ handleScroll: false, handleScale: false });
+            return;
+          }
+        }
+        for (const [id, primitive] of Object.entries(boxObjectsRef.current)) {
+          const handle = primitive.hitTestHandle(pixel.x, pixel.y);
+          if (handle) {
+            editingRef.current = { kind: "box", id, handle };
             chart.applyOptions({ handleScroll: false, handleScale: false });
             return;
           }
@@ -2325,6 +2489,10 @@ export function CandleChart({
         const primitive = new ArrowPrimitive(chart, series, start, start);
         series.attachPrimitive(primitive);
         liveArrowRef.current = primitive;
+      } else if (tool === "box") {
+        const primitive = new BoxPrimitive(chart, series, start, start);
+        series.attachPrimitive(primitive);
+        liveBoxRef.current = primitive;
       } else if (tool === "measure") {
         const primitive = new MeasurePrimitive(chart, series, start, start, 0);
         series.attachPrimitive(primitive);
@@ -2360,7 +2528,9 @@ export function CandleChart({
       };
       const np1 = toPoint(drag.p1x + dx, drag.p1y + dy);
       const np2 = toPoint(drag.p2x + dx, drag.p2y + dy);
-      if (np1 && np2) arrowObjectsRef.current[drag.id]?.setPoints(np1, np2);
+      if (!np1 || !np2) return;
+      if (drag.kind === "arrow") arrowObjectsRef.current[drag.id]?.setPoints(np1, np2);
+      else boxObjectsRef.current[drag.id]?.setPoints(np1, np2);
     }
     window.addEventListener("mousemove", onRightDragMove);
 
@@ -2373,14 +2543,18 @@ export function CandleChart({
       if (rd) {
         rightDragArrowRef.current = null;
         chart.applyOptions({ handleScroll: true, handleScale: true });
-        const primitive = arrowObjectsRef.current[rd.id];
+        const primitive =
+          rd.kind === "arrow"
+            ? arrowObjectsRef.current[rd.id]
+            : boxObjectsRef.current[rd.id];
         if (rd.moved && primitive) {
           const { p1, p2 } = primitive;
-          setArrowLines((prev) =>
+          const setter = rd.kind === "arrow" ? setArrowLines : setBoxShapes;
+          setter((prev) =>
             prev.map((l) => (l.id === rd.id ? { ...l, p1, p2 } : l))
           );
         } else {
-          setArrowMenu({ x: rd.menuX, y: rd.menuY, id: rd.id });
+          setArrowMenu({ x: rd.menuX, y: rd.menuY, id: rd.id, kind: rd.kind });
         }
         return;
       }
@@ -2406,6 +2580,14 @@ export function CandleChart({
           if (primitive) {
             const { p1, p2 } = primitive;
             setArrowLines((prev) =>
+              prev.map((l) => (l.id === editing.id ? { ...l, p1, p2 } : l))
+            );
+          }
+        } else if (editing.kind === "box") {
+          const primitive = boxObjectsRef.current[editing.id];
+          if (primitive) {
+            const { p1, p2 } = primitive;
+            setBoxShapes((prev) =>
               prev.map((l) => (l.id === editing.id ? { ...l, p1, p2 } : l))
             );
           }
@@ -2447,6 +2629,10 @@ export function CandleChart({
         if (series) series.detachPrimitive(liveArrowRef.current);
         liveArrowRef.current = null;
         if (huboMovimiento && start && end) addArrow(start, end);
+      } else if (tool === "box" && liveBoxRef.current) {
+        if (series) series.detachPrimitive(liveBoxRef.current);
+        liveBoxRef.current = null;
+        if (huboMovimiento && start && end) addBox(start, end);
       } else if (tool === "measure" && liveMeasureRef.current) {
         if (series) series.detachPrimitive(liveMeasureRef.current);
         liveMeasureRef.current = null;
@@ -2469,7 +2655,11 @@ export function CandleChart({
     function onContextMenu(e: MouseEvent) {
       const pixel = lastHoverPixelRef.current;
       if (!pixel) return;
-      for (const primitive of Object.values(arrowObjectsRef.current)) {
+      const all = [
+        ...Object.values(arrowObjectsRef.current),
+        ...Object.values(boxObjectsRef.current),
+      ];
+      for (const primitive of all) {
         if (primitive.hitTestBody(pixel.x, pixel.y)) {
           e.preventDefault();
           return;
@@ -2534,6 +2724,9 @@ export function CandleChart({
       for (const primitive of Object.values(arrowObjectsRef.current)) {
         series.detachPrimitive(primitive);
       }
+      for (const primitive of Object.values(boxObjectsRef.current)) {
+        series.detachPrimitive(primitive);
+      }
       for (const primitive of Object.values(measureObjectsRef.current)) {
         series.detachPrimitive(primitive);
       }
@@ -2544,21 +2737,25 @@ export function CandleChart({
       // posible) — se desprende también el dibujo "en vivo".
       if (liveTrendRef.current) series.detachPrimitive(liveTrendRef.current);
       if (liveArrowRef.current) series.detachPrimitive(liveArrowRef.current);
+      if (liveBoxRef.current) series.detachPrimitive(liveBoxRef.current);
       if (liveMeasureRef.current) series.detachPrimitive(liveMeasureRef.current);
       if (liveRegressionRef.current) series.detachPrimitive(liveRegressionRef.current);
     }
     horizontalLineObjectsRef.current = {};
     trendLineObjectsRef.current = {};
     arrowObjectsRef.current = {};
+    boxObjectsRef.current = {};
     measureObjectsRef.current = {};
     regressionObjectsRef.current = {};
     liveTrendRef.current = null;
     liveArrowRef.current = null;
+    liveBoxRef.current = null;
     liveMeasureRef.current = null;
     liveRegressionRef.current = null;
     setHorizontalLines([]);
     setTrendLines([]);
     setArrowLines([]);
+    setBoxShapes([]);
     setMeasureLines([]);
     setRegressionLines([]);
     setHiddenDrawings(new Set());
@@ -2857,6 +3054,33 @@ export function CandleChart({
     );
   }, []);
 
+  const addBox = useCallback(
+    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
+      const chart = chartRef.current;
+      const series = candleSeriesRef.current;
+      if (!chart || !series) return;
+      const id = `${Date.now()}-${Math.random()}`;
+      const primitive = new BoxPrimitive(chart, series, p1, p2, color);
+      series.attachPrimitive(primitive);
+      boxObjectsRef.current[id] = primitive;
+      setBoxShapes((prev) => [...prev, { id, p1, p2, color }]);
+    },
+    []
+  );
+
+  const removeBox = useCallback((id: string) => {
+    const series = candleSeriesRef.current;
+    const primitive = boxObjectsRef.current[id];
+    if (series && primitive) series.detachPrimitive(primitive);
+    delete boxObjectsRef.current[id];
+    setBoxShapes((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
+  const setBoxColor = useCallback((id: string, color: string) => {
+    boxObjectsRef.current[id]?.setColor(color);
+    setBoxShapes((prev) => prev.map((l) => (l.id === id ? { ...l, color } : l)));
+  }, []);
+
   // Cuántas velas hay entre los dos puntos de la regla — parte de lo que
   // muestra la etiqueta ("0,51 (0,58%) 6 barras", igual que TradingView).
   const addMeasure = useCallback((p1: DrawPoint, p2: DrawPoint) => {
@@ -2910,7 +3134,7 @@ export function CandleChart({
   // Para las primitivas (tendencia/regla/regresión) se desprende y se
   // vuelve a enganchar; la línea horizontal se quita y se recrea desde su
   // precio guardado; el texto se controla al renderizar (hiddenDrawings).
-  type DrawKind = "horizontal" | "trend" | "arrow" | "measure" | "regression" | "text";
+  type DrawKind = "horizontal" | "trend" | "arrow" | "box" | "measure" | "regression" | "text";
   const toggleDrawingVisible = useCallback(
     (kind: DrawKind, id: string, price?: number) => {
       const series = candleSeriesRef.current;
@@ -2925,6 +3149,9 @@ export function CandleChart({
           if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
         } else if (kind === "arrow") {
           const p = arrowObjectsRef.current[id];
+          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
+        } else if (kind === "box") {
+          const p = boxObjectsRef.current[id];
           if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
         } else if (kind === "measure") {
           const p = measureObjectsRef.current[id];
@@ -2977,6 +3204,7 @@ export function CandleChart({
           horizontalLines,
           trendLines,
           arrowLines,
+          boxShapes,
           measureLines,
           regressionLines,
           textBoxes,
@@ -2986,7 +3214,7 @@ export function CandleChart({
       // localStorage puede fallar (modo privado, cuota, bloqueado) — no
       // es critico, los dibujos siguen en pantalla esta sesion.
     }
-  }, [horizontalLines, trendLines, arrowLines, measureLines, regressionLines, textBoxes, symbol]);
+  }, [horizontalLines, trendLines, arrowLines, boxShapes, measureLines, regressionLines, textBoxes, symbol]);
 
   // CARGAR: una vez que hay datos del simbolo (velas listas, para que las
   // coordenadas mapeen bien), recrea los dibujos guardados llamando a las
@@ -3003,6 +3231,7 @@ export function CandleChart({
         horizontalLines?: { price: number }[];
         trendLines?: { p1: DrawPoint; p2: DrawPoint }[];
         arrowLines?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
+        boxShapes?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
         measureLines?: { p1: DrawPoint; p2: DrawPoint }[];
         regressionLines?: { fromLogical: number; toLogical: number }[];
         textBoxes?: TextBoxState[];
@@ -3010,13 +3239,14 @@ export function CandleChart({
       saved.horizontalLines?.forEach((l) => addHorizontalLine(l.price));
       saved.trendLines?.forEach((l) => addTrendLine(l.p1, l.p2));
       saved.arrowLines?.forEach((l) => addArrow(l.p1, l.p2, l.color ?? MARK_GREEN));
+      saved.boxShapes?.forEach((l) => addBox(l.p1, l.p2, l.color ?? MARK_GREEN));
       saved.measureLines?.forEach((l) => addMeasure(l.p1, l.p2));
       saved.regressionLines?.forEach((l) => addRegression(l.fromLogical, l.toLogical));
       if (saved.textBoxes?.length) setTextBoxes(saved.textBoxes);
     } catch {
       // JSON corrupto o API cambiada — se ignora, no se rompe el grafico.
     }
-  }, [loading, data, symbol, addHorizontalLine, addTrendLine, addArrow, addMeasure, addRegression]);
+  }, [loading, data, symbol, addHorizontalLine, addTrendLine, addArrow, addBox, addMeasure, addRegression]);
 
   // Cuadro de texto — un solo clic lo coloca (como la línea horizontal) con
   // un tamaño y texto por defecto, y queda pendiente de foco (ver el efecto
@@ -3596,33 +3826,36 @@ export function CandleChart({
             <button
               type="button"
               onClick={() => {
-                setArrowColor(arrowMenu.id, MARK_GREEN);
+                if (arrowMenu.kind === "arrow") setArrowColor(arrowMenu.id, MARK_GREEN);
+                else setBoxColor(arrowMenu.id, MARK_GREEN);
                 setArrowMenu(null);
               }}
               title="Verde (compra)"
-              aria-label="Flecha verde"
+              aria-label="Verde"
               className="h-5 w-5 rounded-full border border-white/20"
               style={{ backgroundColor: MARK_GREEN }}
             />
             <button
               type="button"
               onClick={() => {
-                setArrowColor(arrowMenu.id, MARK_RED);
+                if (arrowMenu.kind === "arrow") setArrowColor(arrowMenu.id, MARK_RED);
+                else setBoxColor(arrowMenu.id, MARK_RED);
                 setArrowMenu(null);
               }}
               title="Rojo (venta)"
-              aria-label="Flecha roja"
+              aria-label="Rojo"
               className="h-5 w-5 rounded-full border border-white/20"
               style={{ backgroundColor: MARK_RED }}
             />
             <button
               type="button"
               onClick={() => {
-                removeArrow(arrowMenu.id);
+                if (arrowMenu.kind === "arrow") removeArrow(arrowMenu.id);
+                else removeBox(arrowMenu.id);
                 setArrowMenu(null);
               }}
-              title="Borrar flecha"
-              aria-label="Borrar flecha"
+              title="Borrar"
+              aria-label="Borrar"
               className="px-1 text-sm leading-none"
               style={{ color: palette.textSoft }}
             >
@@ -3770,6 +4003,7 @@ export function CandleChart({
           horizontalLines={horizontalLines}
           trendLines={trendLines}
           arrowLines={arrowLines}
+          boxShapes={boxShapes}
           measureLines={measureLines}
           regressionLines={regressionLines}
           textBoxes={textBoxes}
@@ -3778,6 +4012,7 @@ export function CandleChart({
           onRemoveHorizontalLine={removeHorizontalLine}
           onRemoveTrendLine={removeTrendLine}
           onRemoveArrow={removeArrow}
+          onRemoveBox={removeBox}
           onRemoveMeasureLine={removeMeasure}
           onRemoveRegressionLine={removeRegression}
           onRemoveTextBox={removeTextBox}
