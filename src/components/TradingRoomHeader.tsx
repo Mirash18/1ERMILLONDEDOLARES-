@@ -69,7 +69,7 @@ export function TradingRoomHeader() {
           </div>
           <Link
             href="/"
-            className="border-l border-border/30 pl-6 font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            className="border-l border-border/30 pl-6 font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
           >
             ← volver
           </Link>

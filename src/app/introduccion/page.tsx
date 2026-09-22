@@ -69,7 +69,7 @@ export default async function Introduccion() {
         </p>
         <Link
           href="/"
-          className="mt-6 font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+          className="mt-6 font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
         >
           ← volver
         </Link>
@@ -90,13 +90,13 @@ export default async function Introduccion() {
           <div className="flex items-center gap-5">
             <Link
               href="/"
-              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
             >
               ← volver
             </Link>
             <Link
               href="/sala-de-trading"
-              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
             >
               Sala de Trading
             </Link>

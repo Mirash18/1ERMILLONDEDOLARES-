@@ -27,6 +27,11 @@ export const metadata: Metadata = {
 // "Manage account" se pintaba en `rgb(33,33,38)` (el valor por defecto
 // para fondo BLANCO) porque `--clerk-color-foreground` nunca se llenaba.
 // Con los nombres nuevos sí se aplica.
+// `elements` (además de `variables`): Alejo reportó que en el menú del
+// usuario (UserButton) los textos "Manage account" y "Sign out" salían
+// casi invisibles — gris oscuro sobre fondo oscuro. Las variables por sí
+// solas no los estaban aclarando, así que se fuerzan esos elementos
+// puntuales a texto claro e íconos en dorado de marca.
 const clerkAppearance = {
   baseTheme: dark,
   variables: {
@@ -38,6 +43,11 @@ const clerkAppearance = {
     colorMutedForeground: "#9AA1AE",
     colorInputForeground: "#E0E0E0",
     borderRadius: "0.5rem",
+  },
+  elements: {
+    userButtonPopoverActionButton: { color: "#E0E0E0" },
+    userButtonPopoverActionButtonText: { color: "#E0E0E0" },
+    userButtonPopoverActionButtonIcon: { color: "#D4AF37" },
   },
 };
 
