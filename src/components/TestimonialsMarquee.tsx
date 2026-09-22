@@ -3,9 +3,10 @@ import type { Testimonial } from "@/lib/testimonials";
 import { TestimonialsGrid } from "./TestimonialsGrid";
 
 /**
- * Fondo de la sección de testimonios: la ilustración que mandó Alejo —
- * el toro y el oso como siluetas doradas tenues a los lados, con el
- * centro oscuro y limpio para que las tarjetas se lean primero.
+ * Fondo de la sección de testimonios: una foto de escritorio de trading
+ * desenfocada (monitores con velas verdes, ambiente nocturno azul), al
+ * estilo de la referencia que mandó Alejo, con un velo oscuro encima
+ * para que las tarjetas claras de los testimonios se lean primero.
  *
  * **Sin `priority` a propósito.** Esta sección va bien abajo de la
  * página, así que la imagen se descarga recién cuando alguien baja
@@ -27,16 +28,17 @@ function TradingBackdrop() {
     <div aria-hidden className="fundido-vertical pointer-events-none absolute inset-0">
       <div className="absolute inset-0 bg-[#0b0e14]" />
       <Image
-        src="/testimonios-siluetas.jpg"
+        src="/testimonios-trading.jpg"
         alt=""
         fill
         sizes="100vw"
         className="object-cover object-center"
       />
-      {/* Velo suave: esta ilustración ya nace oscura y con el centro
-          limpio (se pidió así justamente para que las tarjetas fueran lo
-          primero que se lee). */}
-      <div className="absolute inset-0 bg-black/15" />
+      {/* Velo un poco más marcado que antes: esta foto (escritorio de
+          trading desenfocado) tiene monitores iluminados por todo el
+          ancho, así que se oscurece un poco más para que las tarjetas
+          claras de los testimonios sigan siendo lo primero que se lee. */}
+      <div className="absolute inset-0 bg-black/35" />
     </div>
   );
 }
@@ -48,9 +50,7 @@ export function TestimonialsMarquee({ items }: { items: Testimonial[] }) {
     <section className="relative overflow-hidden pb-24 pt-16">
       <TradingBackdrop />
       <div className="relative">
-        {/* Centrado: la ilustración tiene el toro a la izquierda y el oso
-            a la derecha, con el centro oscuro y limpio. El título cae
-            justo en ese hueco, entre los dos animales. */}
+        {/* Título centrado sobre el fondo de escritorio de trading. */}
         <div className="mx-auto mb-8 max-w-5xl px-6 text-center">
           <h2 className="font-display text-2xl font-medium text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
             Lo que dicen nuestros alumnos
