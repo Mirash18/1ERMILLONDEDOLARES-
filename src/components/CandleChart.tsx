@@ -1766,6 +1766,11 @@ export function CandleChart({
 
       dragStartRef.current = start;
       isDraggingRef.current = true;
+      // Congelar el paneo/zoom del gráfico mientras se traza la línea nueva.
+      // Sin esto, el mismo clic-arrastrar que dibuja también desplazaba el
+      // gráfico entero, y era imposible colocar la línea de un punto a otro
+      // (lo reportó Alejo). Se reactiva al soltar, en onMouseUp.
+      chart.applyOptions({ handleScroll: false, handleScale: false });
 
       if (tool === "trend") {
         const primitive = new TrendLinePrimitive(chart, series, start, start);
@@ -1821,6 +1826,9 @@ export function CandleChart({
 
       if (!isDraggingRef.current) return;
       isDraggingRef.current = false;
+      // Se termina de trazar la línea nueva: reactivar el paneo/zoom que se
+      // había congelado en onMouseDown.
+      chart.applyOptions({ handleScroll: true, handleScale: true });
       const tool = drawToolRef.current;
       const start = dragStartRef.current;
       const end = lastHoverPointRef.current;
