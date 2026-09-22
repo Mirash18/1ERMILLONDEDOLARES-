@@ -151,7 +151,21 @@ const PALETTES: Record<Theme, Palette> = {
 // charts` sabe convertir de sobra hacia ambos lados sin necesitar una vela
 // real en esa posición.
 type DrawPoint = { logical: number; price: number };
-type DrawTool = "none" | "horizontal" | "trend" | "measure" | "regression" | "text";
+type DrawTool =
+  | "none"
+  | "horizontal"
+  | "trend"
+  | "arrow"
+  | "measure"
+  | "regression"
+  | "text";
+
+// Colores de las flechas y cuadros (verde compra / rojo venta), a pedido
+// de Alejo. Se cambian con clic derecho sobre el dibujo. El primero es el
+// que trae al dibujarse.
+const MARK_GREEN = "#22C55E";
+const MARK_RED = "#F23645";
+const MARK_COLORS = [MARK_GREEN, MARK_RED];
 
 // Cuadro de texto libre — a diferencia de los demás dibujos, no vive como
 // ISeriesPrimitive (canvas), sino como un <div> de verdad superpuesto al
@@ -252,6 +266,134 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
                     context.fill();
                   }
                 }
+                context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
+
+// Distancia de un punto (px,py) al segmento (x1,y1)-(x2,y2), en píxeles —
+// para el hit-test del clic derecho (¿le cayó cerca a la flecha/cuadro?).
+function distToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+// Flecha — como la Tendencia, pero con una punta en `p2` y un color que se
+// puede cambiar (verde/rojo) con clic derecho. Sirve para marcar sobre el
+// gráfico hacia dónde se espera el precio (compra/venta). "Rota" porque
+// apunta hacia donde se arrastró; se puede reagarrar cualquiera de sus dos
+// extremos para reorientarla.
+class ArrowPrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+
+  constructor(
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    public p1: DrawPoint,
+    public p2: DrawPoint,
+    public color: string = MARK_GREEN
+  ) {}
+
+  attached(param: { requestUpdate: () => void }): void {
+    this.requestUpdate = param.requestUpdate;
+  }
+
+  setPoints(p1: DrawPoint, p2: DrawPoint): void {
+    this.p1 = p1;
+    this.p2 = p2;
+    this.requestUpdate?.();
+  }
+
+  setColor(color: string): void {
+    this.color = color;
+    this.requestUpdate?.();
+  }
+
+  hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    const { chart, series, p1, p2 } = this;
+    for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
+      const px = logicalToX(chart, p.logical);
+      const py = series.priceToCoordinate(p.price);
+      if (px === null || py === null) continue;
+      if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
+    }
+    return null;
+  }
+
+  // ¿El clic (x,y en px) cayó sobre el cuerpo de la flecha? Para el menú
+  // de clic derecho. (No se llama `hitTest` para no chocar con el método
+  // opcional del mismo nombre de la interfaz ISeriesPrimitive.)
+  hitTestBody(x: number, y: number): boolean {
+    const { chart, series, p1, p2 } = this;
+    const x1 = logicalToX(chart, p1.logical);
+    const y1 = series.priceToCoordinate(p1.price);
+    const x2 = logicalToX(chart, p2.logical);
+    const y2 = series.priceToCoordinate(p2.price);
+    if (x1 === null || y1 === null || x2 === null || y2 === null) return false;
+    return distToSegment(x, y, x1, y1, x2, y2) <= 8;
+  }
+
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const primitive = this;
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw(target: CanvasRenderingTarget2D) {
+              const { chart, series, p1, p2, color } = primitive;
+              const x1 = logicalToX(chart, p1.logical);
+              const y1 = series.priceToCoordinate(p1.price);
+              const x2 = logicalToX(chart, p2.logical);
+              const y2 = series.priceToCoordinate(p2.price);
+              if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+              target.useMediaCoordinateSpace(({ context }) => {
+                context.save();
+                context.strokeStyle = color;
+                context.fillStyle = color;
+                context.lineWidth = 3;
+                context.lineCap = "round";
+                context.lineJoin = "round";
+                // Cuerpo
+                context.beginPath();
+                context.moveTo(x1, y1);
+                context.lineTo(x2, y2);
+                context.stroke();
+                // Punta en p2
+                const ang = Math.atan2(y2 - y1, x2 - x1);
+                const head = 14;
+                const spread = Math.PI / 6;
+                context.beginPath();
+                context.moveTo(x2, y2);
+                context.lineTo(
+                  x2 - head * Math.cos(ang - spread),
+                  y2 - head * Math.sin(ang - spread)
+                );
+                context.lineTo(
+                  x2 - head * Math.cos(ang + spread),
+                  y2 - head * Math.sin(ang + spread)
+                );
+                context.closePath();
+                context.fill();
+                // Manija en la cola (p1) para reagarrar
+                context.beginPath();
+                context.arc(x1, y1, 4.5, 0, Math.PI * 2);
+                context.fill();
                 context.restore();
               });
             },
@@ -972,6 +1114,7 @@ function IndicatorsDropdown({
 const DRAW_TOOLS = [
   { key: "horizontal" as const, label: "Horizontal", hint: "Un clic marca el precio" },
   { key: "trend" as const, label: "Tendencia", hint: "Clic, arrastra y suelta" },
+  { key: "arrow" as const, label: "Flecha", hint: "Arrastra hacia donde apunta · clic derecho = color" },
   { key: "measure" as const, label: "Regla", hint: "Clic, arrastra y suelta" },
   { key: "regression" as const, label: "Regresión", hint: "Clic, arrastra y suelta" },
   { key: "text" as const, label: "Texto", hint: "Un clic coloca el cuadro" },
@@ -1029,6 +1172,13 @@ function DrawToolIcon({ tool }: { tool: Exclude<DrawTool, "none"> }) {
         <svg {...common}>
           <line x1="4" y1="4" x2="14" y2="4" />
           <line x1="9" y1="4" x2="9" y2="14" />
+        </svg>
+      );
+    case "arrow":
+      return (
+        <svg {...common}>
+          <line x1="4" y1="14" x2="14" y2="4" />
+          <polyline points="8,4 14,4 14,10" />
         </svg>
       );
   }
@@ -1357,6 +1507,7 @@ function ObjectsPanel({
   onToggleDayBands,
   horizontalLines,
   trendLines,
+  arrowLines,
   measureLines,
   regressionLines,
   textBoxes,
@@ -1364,6 +1515,7 @@ function ObjectsPanel({
   onToggleVisible,
   onRemoveHorizontalLine,
   onRemoveTrendLine,
+  onRemoveArrow,
   onRemoveMeasureLine,
   onRemoveRegressionLine,
   onRemoveTextBox,
@@ -1380,17 +1532,19 @@ function ObjectsPanel({
   onToggleDayBands: () => void;
   horizontalLines: { id: string; price: number }[];
   trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
+  arrowLines: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
   measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
   regressionLines: { id: string; fromLogical: number; toLogical: number }[];
   textBoxes: TextBoxState[];
   hiddenDrawings: Set<string>;
   onToggleVisible: (
-    kind: "horizontal" | "trend" | "measure" | "regression" | "text",
+    kind: "horizontal" | "trend" | "arrow" | "measure" | "regression" | "text",
     id: string,
     price?: number
   ) => void;
   onRemoveHorizontalLine: (id: string) => void;
   onRemoveTrendLine: (id: string) => void;
+  onRemoveArrow: (id: string) => void;
   onRemoveMeasureLine: (id: string) => void;
   onRemoveRegressionLine: (id: string) => void;
   onRemoveTextBox: (id: string) => void;
@@ -1433,7 +1587,7 @@ function ObjectsPanel({
     price,
     onRemove,
   }: {
-    kind: "horizontal" | "trend" | "measure" | "regression" | "text";
+    kind: "horizontal" | "trend" | "arrow" | "measure" | "regression" | "text";
     id: string;
     label: string;
     price?: number;
@@ -1480,6 +1634,7 @@ function ObjectsPanel({
   const sinDibujos =
     horizontalLines.length === 0 &&
     trendLines.length === 0 &&
+    arrowLines.length === 0 &&
     measureLines.length === 0 &&
     regressionLines.length === 0 &&
     textBoxes.length === 0;
@@ -1548,6 +1703,15 @@ function ObjectsPanel({
             id={l.id}
             label={`Tendencia ${l.p1.price.toFixed(2)} → ${l.p2.price.toFixed(2)}`}
             onRemove={() => onRemoveTrendLine(l.id)}
+          />
+        ))}
+        {arrowLines.map((l) => (
+          <DrawRow
+            key={l.id}
+            kind="arrow"
+            id={l.id}
+            label={`Flecha ${l.color === MARK_RED ? "roja" : "verde"}`}
+            onRemove={() => onRemoveArrow(l.id)}
           />
         ))}
         {measureLines.map((l) => {
@@ -1633,6 +1797,10 @@ export function CandleChart({
   const [trendLines, setTrendLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint }[]
   >([]);
+  // Flechas (marcar compra/venta) — guardan también su color (verde/rojo).
+  const [arrowLines, setArrowLines] = useState<
+    { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
+  >([]);
   const [measureLines, setMeasureLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
   >([]);
@@ -1669,6 +1837,26 @@ export function CandleChart({
   const [hiddenDrawings, setHiddenDrawings] = useState<Set<string>>(
     () => new Set()
   );
+  // Menú de clic derecho sobre una flecha, para cambiarle el color
+  // (verde/rojo) o borrarla. `x`/`y` son píxeles dentro del panel.
+  const [arrowMenu, setArrowMenu] = useState<
+    { x: number; y: number; id: string } | null
+  >(null);
+
+  // Cerrar el menú de la flecha al hacer clic fuera o con Escape.
+  useEffect(() => {
+    if (!arrowMenu) return;
+    const close = () => setArrowMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setArrowMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [arrowMenu]);
 
   const palette = PALETTES[theme];
 
@@ -1683,6 +1871,7 @@ export function CandleChart({
   // para poder desprenderlos de lightweight-charts cuando se borran.
   const horizontalLineObjectsRef = useRef<Record<string, IPriceLine>>({});
   const trendLineObjectsRef = useRef<Record<string, TrendLinePrimitive>>({});
+  const arrowObjectsRef = useRef<Record<string, ArrowPrimitive>>({});
   const measureObjectsRef = useRef<Record<string, MeasurePrimitive>>({});
   const regressionObjectsRef = useRef<Record<string, RegressionChannelPrimitive>>({});
   // Se crea una sola vez (en el efecto que crea el gráfico) y se
@@ -1714,7 +1903,7 @@ export function CandleChart({
   // punto en vez de dibujar uno nuevo. Es lo que permite "subir o bajar" una
   // línea después de trazada, no solo trazarla una vez.
   const editingRef = useRef<{
-    kind: "trend" | "measure";
+    kind: "trend" | "arrow" | "measure";
     id: string;
     handle: "p1" | "p2";
   } | null>(null);
@@ -1722,6 +1911,7 @@ export function CandleChart({
   // uno definitivo (agregado a horizontalLines/trendLines/etc.) al soltar,
   // o se descarta si el arrastre fue demasiado corto para ser intencional.
   const liveTrendRef = useRef<TrendLinePrimitive | null>(null);
+  const liveArrowRef = useRef<ArrowPrimitive | null>(null);
   const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
   // Copia siempre actualizada de `textBoxes` — la necesitan los handlers de
   // arrastre/redimensión (agregados a `window`, creados fuera del ciclo de
@@ -1977,6 +2167,15 @@ export function CandleChart({
               editing.handle === "p1" ? other : point
             );
           }
+        } else if (editing.kind === "arrow") {
+          const primitive = arrowObjectsRef.current[editing.id];
+          if (primitive) {
+            const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
+            primitive.setPoints(
+              editing.handle === "p1" ? point : other,
+              editing.handle === "p1" ? other : point
+            );
+          }
         } else if (editing.kind === "measure") {
           const primitive = measureObjectsRef.current[editing.id];
           if (primitive) {
@@ -1995,6 +2194,8 @@ export function CandleChart({
       const tool = drawToolRef.current;
       if (tool === "trend") {
         liveTrendRef.current?.setPoints(start, point);
+      } else if (tool === "arrow") {
+        liveArrowRef.current?.setPoints(start, point);
       } else if (tool === "measure") {
         const bars = Math.abs(Math.round(point.logical) - Math.round(start.logical));
         liveMeasureRef.current?.setPoints(start, point, bars);
@@ -2020,6 +2221,14 @@ export function CandleChart({
           const handle = primitive.hitTestHandle(pixel.x, pixel.y);
           if (handle) {
             editingRef.current = { kind: "trend", id, handle };
+            chart.applyOptions({ handleScroll: false, handleScale: false });
+            return;
+          }
+        }
+        for (const [id, primitive] of Object.entries(arrowObjectsRef.current)) {
+          const handle = primitive.hitTestHandle(pixel.x, pixel.y);
+          if (handle) {
+            editingRef.current = { kind: "arrow", id, handle };
             chart.applyOptions({ handleScroll: false, handleScale: false });
             return;
           }
@@ -2062,6 +2271,10 @@ export function CandleChart({
         const primitive = new TrendLinePrimitive(chart, series, start, start);
         series.attachPrimitive(primitive);
         liveTrendRef.current = primitive;
+      } else if (tool === "arrow") {
+        const primitive = new ArrowPrimitive(chart, series, start, start);
+        series.attachPrimitive(primitive);
+        liveArrowRef.current = primitive;
       } else if (tool === "measure") {
         const primitive = new MeasurePrimitive(chart, series, start, start, 0);
         series.attachPrimitive(primitive);
@@ -2093,6 +2306,14 @@ export function CandleChart({
           if (primitive) {
             const { p1, p2 } = primitive;
             setTrendLines((prev) =>
+              prev.map((l) => (l.id === editing.id ? { ...l, p1, p2 } : l))
+            );
+          }
+        } else if (editing.kind === "arrow") {
+          const primitive = arrowObjectsRef.current[editing.id];
+          if (primitive) {
+            const { p1, p2 } = primitive;
+            setArrowLines((prev) =>
               prev.map((l) => (l.id === editing.id ? { ...l, p1, p2 } : l))
             );
           }
@@ -2130,6 +2351,10 @@ export function CandleChart({
         if (series) series.detachPrimitive(liveTrendRef.current);
         liveTrendRef.current = null;
         if (huboMovimiento && start && end) addTrendLine(start, end);
+      } else if (tool === "arrow" && liveArrowRef.current) {
+        if (series) series.detachPrimitive(liveArrowRef.current);
+        liveArrowRef.current = null;
+        if (huboMovimiento && start && end) addArrow(start, end);
       } else if (tool === "measure" && liveMeasureRef.current) {
         if (series) series.detachPrimitive(liveMeasureRef.current);
         liveMeasureRef.current = null;
@@ -2146,10 +2371,27 @@ export function CandleChart({
     // gráfico (arrastraron hacia afuera) el arrastre igual debe terminar.
     window.addEventListener("mouseup", onMouseUp);
 
+    // Clic derecho sobre una flecha → menú para cambiarle el color
+    // (verde/rojo) o borrarla. Usa el último píxel donde estaba el cursor
+    // (el crosshair ya lo registró) para saber sobre qué flecha se hizo.
+    function onContextMenu(e: MouseEvent) {
+      const pixel = lastHoverPixelRef.current;
+      if (!pixel) return;
+      for (const [id, primitive] of Object.entries(arrowObjectsRef.current)) {
+        if (primitive.hitTestBody(pixel.x, pixel.y)) {
+          e.preventDefault();
+          setArrowMenu({ x: e.offsetX, y: e.offsetY, id });
+          return;
+        }
+      }
+    }
+    containerRef.current.addEventListener("contextmenu", onContextMenu);
+
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
       chart.unsubscribeCrosshairMove(onCrosshairMove);
       containerRef.current?.removeEventListener("mousedown", onMouseDown);
+      containerRef.current?.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mouseup", onMouseUp);
       observer.disconnect();
       chart.remove();
@@ -2197,6 +2439,9 @@ export function CandleChart({
       for (const primitive of Object.values(trendLineObjectsRef.current)) {
         series.detachPrimitive(primitive);
       }
+      for (const primitive of Object.values(arrowObjectsRef.current)) {
+        series.detachPrimitive(primitive);
+      }
       for (const primitive of Object.values(measureObjectsRef.current)) {
         series.detachPrimitive(primitive);
       }
@@ -2206,18 +2451,22 @@ export function CandleChart({
       // Por si el símbolo cambió a mitad de un arrastre (raro, pero
       // posible) — se desprende también el dibujo "en vivo".
       if (liveTrendRef.current) series.detachPrimitive(liveTrendRef.current);
+      if (liveArrowRef.current) series.detachPrimitive(liveArrowRef.current);
       if (liveMeasureRef.current) series.detachPrimitive(liveMeasureRef.current);
       if (liveRegressionRef.current) series.detachPrimitive(liveRegressionRef.current);
     }
     horizontalLineObjectsRef.current = {};
     trendLineObjectsRef.current = {};
+    arrowObjectsRef.current = {};
     measureObjectsRef.current = {};
     regressionObjectsRef.current = {};
     liveTrendRef.current = null;
+    liveArrowRef.current = null;
     liveMeasureRef.current = null;
     liveRegressionRef.current = null;
     setHorizontalLines([]);
     setTrendLines([]);
+    setArrowLines([]);
     setMeasureLines([]);
     setRegressionLines([]);
     setHiddenDrawings(new Set());
@@ -2485,6 +2734,37 @@ export function CandleChart({
     setTrendLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
+  const addArrow = useCallback(
+    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
+      const chart = chartRef.current;
+      const series = candleSeriesRef.current;
+      if (!chart || !series) return;
+      const id = `${Date.now()}-${Math.random()}`;
+      const primitive = new ArrowPrimitive(chart, series, p1, p2, color);
+      series.attachPrimitive(primitive);
+      arrowObjectsRef.current[id] = primitive;
+      setArrowLines((prev) => [...prev, { id, p1, p2, color }]);
+    },
+    []
+  );
+
+  const removeArrow = useCallback((id: string) => {
+    const series = candleSeriesRef.current;
+    const primitive = arrowObjectsRef.current[id];
+    if (series && primitive) series.detachPrimitive(primitive);
+    delete arrowObjectsRef.current[id];
+    setArrowLines((prev) => prev.filter((l) => l.id !== id));
+  }, []);
+
+  // Cambiar el color de una flecha (verde/rojo) — desde el menú de clic
+  // derecho o el panel de Objetos.
+  const setArrowColor = useCallback((id: string, color: string) => {
+    arrowObjectsRef.current[id]?.setColor(color);
+    setArrowLines((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, color } : l))
+    );
+  }, []);
+
   // Cuántas velas hay entre los dos puntos de la regla — parte de lo que
   // muestra la etiqueta ("0,51 (0,58%) 6 barras", igual que TradingView).
   const addMeasure = useCallback((p1: DrawPoint, p2: DrawPoint) => {
@@ -2538,7 +2818,7 @@ export function CandleChart({
   // Para las primitivas (tendencia/regla/regresión) se desprende y se
   // vuelve a enganchar; la línea horizontal se quita y se recrea desde su
   // precio guardado; el texto se controla al renderizar (hiddenDrawings).
-  type DrawKind = "horizontal" | "trend" | "measure" | "regression" | "text";
+  type DrawKind = "horizontal" | "trend" | "arrow" | "measure" | "regression" | "text";
   const toggleDrawingVisible = useCallback(
     (kind: DrawKind, id: string, price?: number) => {
       const series = candleSeriesRef.current;
@@ -2550,6 +2830,9 @@ export function CandleChart({
         else next.delete(id);
         if (kind === "trend") {
           const p = trendLineObjectsRef.current[id];
+          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
+        } else if (kind === "arrow") {
+          const p = arrowObjectsRef.current[id];
           if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
         } else if (kind === "measure") {
           const p = measureObjectsRef.current[id];
@@ -2601,6 +2884,7 @@ export function CandleChart({
         JSON.stringify({
           horizontalLines,
           trendLines,
+          arrowLines,
           measureLines,
           regressionLines,
           textBoxes,
@@ -2610,7 +2894,7 @@ export function CandleChart({
       // localStorage puede fallar (modo privado, cuota, bloqueado) — no
       // es critico, los dibujos siguen en pantalla esta sesion.
     }
-  }, [horizontalLines, trendLines, measureLines, regressionLines, textBoxes, symbol]);
+  }, [horizontalLines, trendLines, arrowLines, measureLines, regressionLines, textBoxes, symbol]);
 
   // CARGAR: una vez que hay datos del simbolo (velas listas, para que las
   // coordenadas mapeen bien), recrea los dibujos guardados llamando a las
@@ -2626,19 +2910,21 @@ export function CandleChart({
       const saved = JSON.parse(raw) as {
         horizontalLines?: { price: number }[];
         trendLines?: { p1: DrawPoint; p2: DrawPoint }[];
+        arrowLines?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
         measureLines?: { p1: DrawPoint; p2: DrawPoint }[];
         regressionLines?: { fromLogical: number; toLogical: number }[];
         textBoxes?: TextBoxState[];
       };
       saved.horizontalLines?.forEach((l) => addHorizontalLine(l.price));
       saved.trendLines?.forEach((l) => addTrendLine(l.p1, l.p2));
+      saved.arrowLines?.forEach((l) => addArrow(l.p1, l.p2, l.color ?? MARK_GREEN));
       saved.measureLines?.forEach((l) => addMeasure(l.p1, l.p2));
       saved.regressionLines?.forEach((l) => addRegression(l.fromLogical, l.toLogical));
       if (saved.textBoxes?.length) setTextBoxes(saved.textBoxes);
     } catch {
       // JSON corrupto o API cambiada — se ignora, no se rompe el grafico.
     }
-  }, [loading, data, symbol, addHorizontalLine, addTrendLine, addMeasure, addRegression]);
+  }, [loading, data, symbol, addHorizontalLine, addTrendLine, addArrow, addMeasure, addRegression]);
 
   // Cuadro de texto — un solo clic lo coloca (como la línea horizontal) con
   // un tamaño y texto por defecto, y queda pendiente de foco (ver el efecto
@@ -3201,6 +3487,57 @@ export function CandleChart({
           Próxima vela en{" "}
           {secondsToNextCandle === null ? "—:—" : formatCountdown(secondsToNextCandle)}
         </div>
+        {/* Menú de clic derecho sobre una flecha: color verde/rojo o borrar.
+            `stopPropagation` en mousedown para que el cierre "al hacer clic
+            fuera" no lo cierre antes de que corra el onClick del botón. */}
+        {arrowMenu && (
+          <div
+            className="absolute z-40 flex items-center gap-1.5 rounded-md border p-1.5 shadow-lg"
+            style={{
+              left: arrowMenu.x,
+              top: arrowMenu.y,
+              backgroundColor: palette.buttonBg,
+              borderColor: palette.wrapperBorder,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setArrowColor(arrowMenu.id, MARK_GREEN);
+                setArrowMenu(null);
+              }}
+              title="Verde (compra)"
+              aria-label="Flecha verde"
+              className="h-5 w-5 rounded-full border border-white/20"
+              style={{ backgroundColor: MARK_GREEN }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setArrowColor(arrowMenu.id, MARK_RED);
+                setArrowMenu(null);
+              }}
+              title="Rojo (venta)"
+              aria-label="Flecha roja"
+              className="h-5 w-5 rounded-full border border-white/20"
+              style={{ backgroundColor: MARK_RED }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                removeArrow(arrowMenu.id);
+                setArrowMenu(null);
+              }}
+              title="Borrar flecha"
+              aria-label="Borrar flecha"
+              className="px-1 text-sm leading-none"
+              style={{ color: palette.textSoft }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {/* Capa de cuadros de texto — hermana de containerRef, no hija: así
             un clic sobre un cuadro nunca pasa por el mousedown nativo del
             gráfico (que vive sobre containerRef), y no hace falta pelear
@@ -3340,6 +3677,7 @@ export function CandleChart({
           onToggleDayBands={() => setShowDayBands((v) => !v)}
           horizontalLines={horizontalLines}
           trendLines={trendLines}
+          arrowLines={arrowLines}
           measureLines={measureLines}
           regressionLines={regressionLines}
           textBoxes={textBoxes}
@@ -3347,6 +3685,7 @@ export function CandleChart({
           onToggleVisible={toggleDrawingVisible}
           onRemoveHorizontalLine={removeHorizontalLine}
           onRemoveTrendLine={removeTrendLine}
+          onRemoveArrow={removeArrow}
           onRemoveMeasureLine={removeMeasure}
           onRemoveRegressionLine={removeRegression}
           onRemoveTextBox={removeTextBox}
