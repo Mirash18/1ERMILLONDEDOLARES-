@@ -83,7 +83,7 @@ export default async function Introduccion() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
           <Link
             href="/"
-            className="font-display text-lg tracking-tight text-text"
+            className="font-display text-lg uppercase tracking-tight text-text"
           >
             1er <span className="text-gold">Millón</span> de Dólares
           </Link>

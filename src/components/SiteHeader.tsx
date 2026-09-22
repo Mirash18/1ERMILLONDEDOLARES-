@@ -50,7 +50,7 @@ export function SiteHeader() {
             priority
             className="h-[26px] w-auto"
           />
-          <span className="whitespace-nowrap font-display text-[17px] tracking-tight text-text">
+          <span className="whitespace-nowrap font-display text-[17px] uppercase tracking-tight text-text">
             1er <span className="text-gold">Millón</span> de Dólares
           </span>
         </Link>

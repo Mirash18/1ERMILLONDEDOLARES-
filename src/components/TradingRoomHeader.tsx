@@ -66,7 +66,7 @@ export function TradingRoomHeader() {
               priority
               className="h-8 w-auto"
             />
-            <span className="hidden whitespace-nowrap font-display text-[17px] tracking-tight text-text sm:inline">
+            <span className="hidden whitespace-nowrap font-display text-[17px] uppercase tracking-tight text-text sm:inline">
               1er <span className="text-gold">Millón</span> de Dólares
             </span>
           </Link>
