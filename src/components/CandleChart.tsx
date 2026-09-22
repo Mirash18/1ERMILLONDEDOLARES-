@@ -1926,6 +1926,10 @@ export function CandleChart({
     setTrendLines([]);
     setMeasureLines([]);
     setRegressionLines([]);
+    // Se cambió de símbolo: marcar "sin hidratar" para que el efecto de
+    // carga vuelva a traer los dibujos guardados del símbolo nuevo cuando
+    // lleguen sus velas (ver persistencia más abajo).
+    hydratedSymbolRef.current = null;
     // Los cuadros de texto no son primitivos de canvas (son <div>, ver
     // TextBoxState), así que no hay nada que desprender de `series` — solo
     // vaciar el estado y sus refs.
@@ -2128,6 +2132,13 @@ export function CandleChart({
     }
   }, [showDayBands]);
 
+  // Qué símbolo ya se "hidrató" (se le cargaron los dibujos guardados).
+  // Sirve para dos cosas: no volver a cargar dos veces, y — clave — no
+  // dejar que el efecto de guardado escriba el estado vacío ANTES de haber
+  // cargado lo guardado (si no, al recargar se pisaría con [] lo que había
+  // dibujado el usuario). Ver los dos efectos más abajo.
+  const hydratedSymbolRef = useRef<string | null>(null);
+
   // Traza una línea horizontal nueva en `price`.
   const addHorizontalLine = useCallback((price: number) => {
     const series = candleSeriesRef.current;
@@ -2220,6 +2231,65 @@ export function CandleChart({
     delete regressionObjectsRef.current[id];
     setRegressionLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
+
+  // --- Persistencia de dibujos (localStorage, por símbolo) ---
+  // Alejo lo reporto: dibujaba (linea, tendencia, regresion), recargaba la
+  // pagina y se borraba todo. Los dibujos vivian solo en memoria. Ahora se
+  // guardan por SIMBOLO en el navegador y se recrean al cargar. Se llavea
+  // por simbolo (no por temporalidad) para calzar con el efecto que ya
+  // limpia los dibujos al cambiar de simbolo; la regla ya estaba bien, se
+  // guarda igual que las demas.
+  const drawStorageKey = (sym: string) => `millon:draw:${sym}`;
+
+  // GUARDAR: cada vez que cambian los dibujos. Guardado protegido: no
+  // escribe hasta que ESTE simbolo ya se hidrato — si no, el estado vacio
+  // del arranque (o del cambio de simbolo) pisaria lo guardado con [].
+  useEffect(() => {
+    if (hydratedSymbolRef.current !== symbol) return;
+    try {
+      localStorage.setItem(
+        drawStorageKey(symbol),
+        JSON.stringify({
+          horizontalLines,
+          trendLines,
+          measureLines,
+          regressionLines,
+          textBoxes,
+        })
+      );
+    } catch {
+      // localStorage puede fallar (modo privado, cuota, bloqueado) — no
+      // es critico, los dibujos siguen en pantalla esta sesion.
+    }
+  }, [horizontalLines, trendLines, measureLines, regressionLines, textBoxes, symbol]);
+
+  // CARGAR: una vez que hay datos del simbolo (velas listas, para que las
+  // coordenadas mapeen bien), recrea los dibujos guardados llamando a las
+  // mismas funciones que usa el usuario. Solo corre cuando el fetch
+  // termino (`!loading`) y aun no se hidrato este simbolo.
+  useEffect(() => {
+    if (loading || !data || data.error || data.candles.length === 0) return;
+    if (hydratedSymbolRef.current === symbol) return;
+    hydratedSymbolRef.current = symbol;
+    try {
+      const raw = localStorage.getItem(drawStorageKey(symbol));
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        horizontalLines?: { price: number }[];
+        trendLines?: { p1: DrawPoint; p2: DrawPoint }[];
+        measureLines?: { p1: DrawPoint; p2: DrawPoint }[];
+        regressionLines?: { fromLogical: number; toLogical: number }[];
+        textBoxes?: TextBoxState[];
+      };
+      saved.horizontalLines?.forEach((l) => addHorizontalLine(l.price));
+      saved.trendLines?.forEach((l) => addTrendLine(l.p1, l.p2));
+      saved.measureLines?.forEach((l) => addMeasure(l.p1, l.p2));
+      saved.regressionLines?.forEach((l) => addRegression(l.fromLogical, l.toLogical));
+      if (saved.textBoxes?.length) setTextBoxes(saved.textBoxes);
+    } catch {
+      // JSON corrupto o API cambiada — se ignora, no se rompe el grafico.
+    }
+  }, [loading, data, symbol, addHorizontalLine, addTrendLine, addMeasure, addRegression]);
 
   // Cuadro de texto — un solo clic lo coloca (como la línea horizontal) con
   // un tamaño y texto por defecto, y queda pendiente de foco (ver el efecto
