@@ -21,6 +21,39 @@ import type { Testimonial } from "@/lib/testimonials";
  * (también reportado por Alejo). Así se ve la imagen entera, y el que
  * quiera verla en grande le da clic.
  */
+// Glifo estilo cámara con el degradado característico de Instagram — evoca
+// la red social (los testimonios vienen de ahí) SIN usar el logo ni el
+// nombre de marca real, que son marca registrada.
+function SocialGlyph() {
+  return (
+    <span
+      aria-hidden
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
+      style={{
+        background:
+          "linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
+      }}
+    >
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="white"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="5" />
+        <circle cx="12" cy="12" r="4" />
+        <circle cx="17.5" cy="6.5" r="1" fill="white" stroke="none" />
+      </svg>
+    </span>
+  );
+}
+
+const HASHTAG = "#PrimerMillónDeDólares";
+
 export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
   const [ampliado, setAmpliado] = useState<Testimonial | null>(null);
 
@@ -71,12 +104,19 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
                 />
               )}
             </div>
-            <div className="flex flex-1 flex-col gap-2 p-4">
+            <div className="flex flex-1 flex-col gap-2.5 p-4">
+              {/* Encabezado estilo red social: glifo + nombre del alumno. */}
+              <div className="flex items-center gap-2">
+                <SocialGlyph />
+                <span className="flex-1 truncate font-sans text-[13px] font-semibold text-[#2a2a24]">
+                  {t.name}
+                </span>
+              </div>
               <p className="text-sm leading-snug text-[#2a2a24]">
                 &ldquo;{t.text}&rdquo;
               </p>
-              <span className="mt-auto font-sans text-[11px] font-medium text-gold">
-                {t.name}
+              <span className="mt-auto font-sans text-[11px] font-semibold text-[#a9821e]">
+                {HASHTAG}
               </span>
             </div>
           </button>
@@ -119,10 +159,16 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
             />
           )}
 
-          <div className="max-w-xl text-center">
+          <div className="flex max-w-xl flex-col items-center gap-1 text-center">
+            <div className="flex items-center gap-2">
+              <SocialGlyph />
+              <span className="font-sans text-sm font-semibold text-white">
+                {ampliado.name}
+              </span>
+            </div>
             <p className="text-sm text-white/90">&ldquo;{ampliado.text}&rdquo;</p>
-            <span className="mt-1 block font-sans text-[11px] text-gold">
-              {ampliado.name}
+            <span className="font-sans text-[11px] font-semibold text-gold">
+              {HASHTAG}
             </span>
           </div>
         </div>
