@@ -3,8 +3,22 @@
 import { useEffect, useState } from "react";
 import type { Quote } from "@/lib/marketData";
 
-const FREE_SYMBOLS = ["SPY", "META", "GLD"];
-const LOCKED_GROUPS = ["S&P 500", "Nasdaq"];
+const FREE_SYMBOLS = ["SPY", "QQQ", "META", "GLD"];
+// Solo un grupo bloqueado (Alejo pidió quitar "Nasdaq" y dejar uno).
+const LOCKED_GROUPS = ["S&P 500"];
+
+// Identidad visual por símbolo — un tinte de color y el mismo color para
+// la marca de agua del ticker de fondo. A pedido de Alejo: que cada
+// tarjeta "no sea tan plana", que muestre el símbolo de fondo. Se hace con
+// CSS (tinte + texto gigante translúcido), sin imágenes: más liviano para
+// la portada y sin usar logos de marca registrada.
+const SYMBOL_STYLE: Record<string, { tint: string; glow: string }> = {
+  SPY: { tint: "rgba(8,153,129,0.22)", glow: "#089981" }, // verde S&P
+  QQQ: { tint: "rgba(124,92,246,0.22)", glow: "#7C5CF6" }, // morado tech
+  META: { tint: "rgba(24,119,242,0.24)", glow: "#3B82F6" }, // azul Meta
+  GLD: { tint: "rgba(212,175,55,0.26)", glow: "#D4AF37" }, // dorado oro
+};
+const DEFAULT_STYLE = { tint: "rgba(130,133,148,0.18)", glow: "#828594" };
 
 const PLACEHOLDER: Quote[] = FREE_SYMBOLS.map((symbol) => ({
   symbol,
@@ -53,44 +67,62 @@ export function TickerStrip() {
 
   return (
     <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-5">
-      {quotes.map((q) => (
-        <div key={q.symbol} className="flex flex-col gap-1 bg-panel px-4 py-3">
-          <span className="font-mono text-sm font-medium text-text">
-            {q.symbol}
-          </span>
-          {q.price != null ? (
-            <span className="flex items-baseline gap-2 font-mono text-xs">
-              <span className="text-text">{q.price.toFixed(2)}</span>
-              <span
-                className={
-                  (q.change ?? 0) >= 0 ? "text-green" : "text-red"
-                }
-              >
-                {(q.change ?? 0) >= 0 ? "+" : ""}
-                {q.percentChange?.toFixed(2)}%
+      {quotes.map((q) => {
+        const style = SYMBOL_STYLE[q.symbol] ?? DEFAULT_STYLE;
+        return (
+          <div
+            key={q.symbol}
+            className="relative flex flex-col gap-1 overflow-hidden bg-panel px-4 py-3"
+          >
+            {/* Tinte de marca en la esquina */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: `radial-gradient(130% 120% at 100% 0%, ${style.tint}, transparent 62%)`,
+              }}
+            />
+            {/* Marca de agua: el símbolo gigante de fondo */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -bottom-2 -right-1 select-none font-sans text-[42px] font-extrabold leading-none tracking-tight"
+              style={{ color: style.glow, opacity: 0.14 }}
+            >
+              {q.symbol}
+            </span>
+            <span className="relative font-sans text-[15px] font-semibold tracking-tight text-text">
+              {q.symbol}
+            </span>
+            {q.price != null ? (
+              <span className="relative flex items-baseline gap-2 font-mono text-xs">
+                <span className="text-text">{q.price.toFixed(2)}</span>
+                <span className={(q.change ?? 0) >= 0 ? "text-green" : "text-red"}>
+                  {(q.change ?? 0) >= 0 ? "+" : ""}
+                  {q.percentChange?.toFixed(2)}%
+                </span>
               </span>
-            </span>
-          ) : (
-            <span className="text-[11px] uppercase tracking-wide text-green">
-              Gratis
-            </span>
-          )}
-        </div>
-      ))}
+            ) : (
+              <span className="relative text-[11px] font-medium uppercase tracking-wide text-green">
+                Gratis
+              </span>
+            )}
+          </div>
+        );
+      })}
       {LOCKED_GROUPS.map((sym) => (
         <div
           key={sym}
-          className={`flex flex-col gap-1 bg-panel px-4 py-3 ${allowed ? "" : "opacity-70"}`}
+          className={`relative flex flex-col gap-1 overflow-hidden bg-panel px-4 py-3 ${allowed ? "" : "opacity-70"}`}
         >
-          <span className="font-mono text-sm font-medium text-text">
+          <span className="font-sans text-[15px] font-semibold tracking-tight text-text">
             {sym}
           </span>
           {allowed ? (
-            <span className="text-[11px] uppercase tracking-wide text-green">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-green">
               Desbloqueado
             </span>
           ) : (
-            <span className="text-[11px] uppercase tracking-wide text-gold">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-gold">
               Con suscripción
             </span>
           )}
