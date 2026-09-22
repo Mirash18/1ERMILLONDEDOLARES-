@@ -151,6 +151,21 @@ const PALETTES: Record<Theme, Palette> = {
 // charts` sabe convertir de sobra hacia ambos lados sin necesitar una vela
 // real en esa posición.
 type DrawPoint = { logical: number; price: number };
+
+// Punto ANCLADO A LA PANTALLA (fracción 0..1 del ancho/alto del panel del
+// gráfico), no al precio/tiempo. Lo usan las flechas y los cuadros: a
+// pedido de Alejo, deben quedarse fijos donde uno los pone en el marco,
+// sin "pegarse al precio" (que se mueve cuando el eje se reescala con
+// datos nuevos). El resto de dibujos (tendencia, regla, regresión) sí
+// siguen ancladas a la vela con DrawPoint.
+type ScreenPoint = { nx: number; ny: number };
+
+// Tamaño en píxeles del panel del gráfico (área de dibujo, sin el eje de
+// precio ni el de tiempo). Lo actualiza PaneSizeRecorder en cada repintado
+// y sirve para convertir píxeles <-> fracción al crear/mover flechas y
+// cuadros. Vive en un ref del componente (paneSizeRef).
+type PaneSize = { w: number; h: number };
+
 type DrawTool =
   | "none"
   | "horizontal"
@@ -302,19 +317,19 @@ function distToSegment(
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
-// Flecha — como la Tendencia, pero con una punta en `p2` y un color que se
-// puede cambiar (verde/rojo) con clic derecho. Sirve para marcar sobre el
-// gráfico hacia dónde se espera el precio (compra/venta). "Rota" porque
-// apunta hacia donde se arrastró; se puede reagarrar cualquiera de sus dos
+// Flecha — con una punta en `p2` y un color que se puede cambiar
+// (verde/rojo) con clic derecho. Sirve para marcar hacia dónde se espera
+// el precio. Anclada a la PANTALLA (ScreenPoint), no al precio: se queda
+// fija donde uno la pone en el marco, aunque el eje se reescale. "Rota"
+// porque apunta hacia donde se arrastró; se reagarra cualquiera de sus dos
 // extremos para reorientarla.
 class ArrowPrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
+  private lastSize: PaneSize = { w: 0, h: 0 };
 
   constructor(
-    private chart: IChartApi,
-    private series: ISeriesApi<"Candlestick">,
-    public p1: DrawPoint,
-    public p2: DrawPoint,
+    public p1: ScreenPoint,
+    public p2: ScreenPoint,
     public color: string = MARK_GREEN
   ) {}
 
@@ -322,7 +337,7 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = param.requestUpdate;
   }
 
-  setPoints(p1: DrawPoint, p2: DrawPoint): void {
+  setPoints(p1: ScreenPoint, p2: ScreenPoint): void {
     this.p1 = p1;
     this.p2 = p2;
     this.requestUpdate?.();
@@ -333,27 +348,21 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  private toPx(p: ScreenPoint): [number, number] {
+    return [p.nx * this.lastSize.w, p.ny * this.lastSize.h];
+  }
+
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
-    const { chart, series, p1, p2 } = this;
-    for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
-      const px = logicalToX(chart, p.logical);
-      const py = series.priceToCoordinate(p.price);
-      if (px === null || py === null) continue;
+    for (const [key, p] of [["p1", this.p1], ["p2", this.p2]] as const) {
+      const [px, py] = this.toPx(p);
       if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
     }
     return null;
   }
 
-  // ¿El clic (x,y en px) cayó sobre el cuerpo de la flecha? Para el menú
-  // de clic derecho. (No se llama `hitTest` para no chocar con el método
-  // opcional del mismo nombre de la interfaz ISeriesPrimitive.)
   hitTestBody(x: number, y: number): boolean {
-    const { chart, series, p1, p2 } = this;
-    const x1 = logicalToX(chart, p1.logical);
-    const y1 = series.priceToCoordinate(p1.price);
-    const x2 = logicalToX(chart, p2.logical);
-    const y2 = series.priceToCoordinate(p2.price);
-    if (x1 === null || y1 === null || x2 === null || y2 === null) return false;
+    const [x1, y1] = this.toPx(this.p1);
+    const [x2, y2] = this.toPx(this.p2);
     return distToSegment(x, y, x1, y1, x2, y2) <= 8;
   }
 
@@ -364,25 +373,23 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
-              const { chart, series, p1, p2, color } = primitive;
-              const x1 = logicalToX(chart, p1.logical);
-              const y1 = series.priceToCoordinate(p1.price);
-              const x2 = logicalToX(chart, p2.logical);
-              const y2 = series.priceToCoordinate(p2.price);
-              if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-              target.useMediaCoordinateSpace(({ context }) => {
+              target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+                primitive.lastSize = { w: mediaSize.width, h: mediaSize.height };
+                const { p1, p2, color } = primitive;
+                const x1 = p1.nx * mediaSize.width;
+                const y1 = p1.ny * mediaSize.height;
+                const x2 = p2.nx * mediaSize.width;
+                const y2 = p2.ny * mediaSize.height;
                 context.save();
                 context.strokeStyle = color;
                 context.fillStyle = color;
                 context.lineWidth = 3;
                 context.lineCap = "round";
                 context.lineJoin = "round";
-                // Cuerpo
                 context.beginPath();
                 context.moveTo(x1, y1);
                 context.lineTo(x2, y2);
                 context.stroke();
-                // Punta en p2
                 const ang = Math.atan2(y2 - y1, x2 - x1);
                 const head = 14;
                 const spread = Math.PI / 6;
@@ -398,7 +405,6 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
                 );
                 context.closePath();
                 context.fill();
-                // Manija en la cola (p1) para reagarrar
                 context.beginPath();
                 context.arc(x1, y1, 4.5, 0, Math.PI * 2);
                 context.fill();
@@ -419,12 +425,11 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
 // su color con clic derecho seco.
 class BoxPrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
+  private lastSize: PaneSize = { w: 0, h: 0 };
 
   constructor(
-    private chart: IChartApi,
-    private series: ISeriesApi<"Candlestick">,
-    public p1: DrawPoint,
-    public p2: DrawPoint,
+    public p1: ScreenPoint,
+    public p2: ScreenPoint,
     public color: string = MARK_GREEN
   ) {}
 
@@ -432,7 +437,7 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = param.requestUpdate;
   }
 
-  setPoints(p1: DrawPoint, p2: DrawPoint): void {
+  setPoints(p1: ScreenPoint, p2: ScreenPoint): void {
     this.p1 = p1;
     this.p2 = p2;
     this.requestUpdate?.();
@@ -443,25 +448,21 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  private toPx(p: ScreenPoint): [number, number] {
+    return [p.nx * this.lastSize.w, p.ny * this.lastSize.h];
+  }
+
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
-    const { chart, series, p1, p2 } = this;
-    for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
-      const px = logicalToX(chart, p.logical);
-      const py = series.priceToCoordinate(p.price);
-      if (px === null || py === null) continue;
+    for (const [key, p] of [["p1", this.p1], ["p2", this.p2]] as const) {
+      const [px, py] = this.toPx(p);
       if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
     }
     return null;
   }
 
-  // ¿El clic cayó dentro del rectángulo? Para el clic derecho (color/mover).
   hitTestBody(x: number, y: number): boolean {
-    const { chart, series, p1, p2 } = this;
-    const x1 = logicalToX(chart, p1.logical);
-    const y1 = series.priceToCoordinate(p1.price);
-    const x2 = logicalToX(chart, p2.logical);
-    const y2 = series.priceToCoordinate(p2.price);
-    if (x1 === null || y1 === null || x2 === null || y2 === null) return false;
+    const [x1, y1] = this.toPx(this.p1);
+    const [x2, y2] = this.toPx(this.p2);
     return (
       x >= Math.min(x1, x2) &&
       x <= Math.max(x1, x2) &&
@@ -477,24 +478,23 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
-              const { chart, series, p1, p2, color } = primitive;
-              const x1 = logicalToX(chart, p1.logical);
-              const y1 = series.priceToCoordinate(p1.price);
-              const x2 = logicalToX(chart, p2.logical);
-              const y2 = series.priceToCoordinate(p2.price);
-              if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-              const left = Math.min(x1, x2);
-              const top = Math.min(y1, y2);
-              const w = Math.abs(x2 - x1);
-              const h = Math.abs(y2 - y1);
-              target.useMediaCoordinateSpace(({ context }) => {
+              target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+                primitive.lastSize = { w: mediaSize.width, h: mediaSize.height };
+                const { p1, p2, color } = primitive;
+                const x1 = p1.nx * mediaSize.width;
+                const y1 = p1.ny * mediaSize.height;
+                const x2 = p2.nx * mediaSize.width;
+                const y2 = p2.ny * mediaSize.height;
+                const left = Math.min(x1, x2);
+                const top = Math.min(y1, y2);
+                const w = Math.abs(x2 - x1);
+                const h = Math.abs(y2 - y1);
                 context.save();
                 context.fillStyle = BOX_FILL[color] ?? "rgba(34,197,94,0.30)";
                 context.fillRect(left, top, w, h);
                 context.strokeStyle = color;
                 context.lineWidth = 2;
                 context.strokeRect(left, top, w, h);
-                // Manijas en las dos esquinas que lo definen.
                 context.fillStyle = color;
                 for (const [px, py] of [[x1, y1], [x2, y2]] as const) {
                   context.beginPath();
@@ -502,6 +502,31 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
                   context.fill();
                 }
                 context.restore();
+              });
+            },
+          };
+        },
+      },
+    ];
+  }
+}
+
+// Registrador invisible del tamaño del panel — se adjunta siempre y guarda
+// el ancho/alto del área de dibujo en un ref, para poder convertir píxeles
+// a fracción de pantalla al CREAR una flecha/cuadro nuevos (cuando todavía
+// no hay ninguno dibujado que reporte su tamaño).
+class PaneSizeRecorder implements ISeriesPrimitive<Time> {
+  constructor(private onSize: (s: PaneSize) => void) {}
+  paneViews(): ISeriesPrimitivePaneView[] {
+    const onSize = this.onSize;
+    return [
+      {
+        renderer(): ISeriesPrimitivePaneRenderer {
+          return {
+            draw() {},
+            drawBackground(target: CanvasRenderingTarget2D) {
+              target.useMediaCoordinateSpace(({ mediaSize }) => {
+                onSize({ w: mediaSize.width, h: mediaSize.height });
               });
             },
           };
@@ -1648,8 +1673,8 @@ function ObjectsPanel({
   onToggleDayBands: () => void;
   horizontalLines: { id: string; price: number }[];
   trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
-  arrowLines: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
-  boxShapes: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
+  arrowLines: { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[];
+  boxShapes: { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[];
   measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
   regressionLines: { id: string; fromLogical: number; toLogical: number }[];
   textBoxes: TextBoxState[];
@@ -1925,13 +1950,15 @@ export function CandleChart({
   const [trendLines, setTrendLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint }[]
   >([]);
-  // Flechas (marcar compra/venta) — guardan también su color (verde/rojo).
+  // Flechas (marcar compra/venta) — ancladas a la pantalla (ScreenPoint),
+  // no al precio, para que se queden fijas donde uno las pone. Guardan su
+  // color (verde/rojo).
   const [arrowLines, setArrowLines] = useState<
-    { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
+    { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[]
   >([]);
   // Cuadros (marcar zonas) — mismo formato que las flechas.
   const [boxShapes, setBoxShapes] = useState<
-    { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
+    { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[]
   >([]);
   const [measureLines, setMeasureLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
@@ -2047,6 +2074,10 @@ export function CandleChart({
   const liveArrowRef = useRef<ArrowPrimitive | null>(null);
   const liveBoxRef = useRef<BoxPrimitive | null>(null);
   const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
+  // Tamaño del panel (lo llena PaneSizeRecorder) y píxel donde empezó el
+  // arrastre — para las flechas/cuadros, que se anclan a la pantalla.
+  const paneSizeRef = useRef<PaneSize>({ w: 0, h: 0 });
+  const dragStartPixelRef = useRef<{ x: number; y: number } | null>(null);
   // Arrastre de una flecha ENTERA con clic derecho sostenido (mover, no
   // reorientar). Guarda su id, los píxeles de sus dos extremos al empezar,
   // el punto del cursor al empezar y si de verdad se movió (para decidir en
@@ -2252,6 +2283,14 @@ export function CandleChart({
       () => INTRADAY_TIMEFRAMES.has(timeframeRef.current)
     );
 
+    // Registrador del tamaño del panel — siempre adjunto, para poder
+    // convertir píxeles a fracción de pantalla al crear flechas/cuadros.
+    candleSeries.attachPrimitive(
+      new PaneSizeRecorder((s) => {
+        paneSizeRef.current = s;
+      })
+    );
+
     const resize = () => {
       if (containerRef.current) {
         const width = containerRef.current.clientWidth;
@@ -2303,6 +2342,14 @@ export function CandleChart({
       const point: DrawPoint = { logical, price };
       lastHoverPointRef.current = point;
       lastHoverPixelRef.current = { x: param.point.x, y: param.point.y };
+      // Punto anclado a la pantalla (para flechas/cuadros): fracción del
+      // panel. No usa precio/tiempo, así que no se "pega" al precio.
+      const paneW = paneSizeRef.current.w;
+      const paneH = paneSizeRef.current.h;
+      const screenPoint: ScreenPoint = {
+        nx: paneW > 0 ? param.point.x / paneW : 0,
+        ny: paneH > 0 ? param.point.y / paneH : 0,
+      };
 
       // Arrastrando el tirador de un dibujo YA existente (ver editingRef) -
       // manda sobre dibujar uno nuevo, aunque en la práctica no compiten
@@ -2323,8 +2370,8 @@ export function CandleChart({
           if (primitive) {
             const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
             primitive.setPoints(
-              editing.handle === "p1" ? point : other,
-              editing.handle === "p1" ? other : point
+              editing.handle === "p1" ? screenPoint : other,
+              editing.handle === "p1" ? other : screenPoint
             );
           }
         } else if (editing.kind === "box") {
@@ -2332,8 +2379,8 @@ export function CandleChart({
           if (primitive) {
             const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
             primitive.setPoints(
-              editing.handle === "p1" ? point : other,
-              editing.handle === "p1" ? other : point
+              editing.handle === "p1" ? screenPoint : other,
+              editing.handle === "p1" ? other : screenPoint
             );
           }
         } else if (editing.kind === "measure") {
@@ -2354,10 +2401,17 @@ export function CandleChart({
       const tool = drawToolRef.current;
       if (tool === "trend") {
         liveTrendRef.current?.setPoints(start, point);
-      } else if (tool === "arrow") {
-        liveArrowRef.current?.setPoints(start, point);
-      } else if (tool === "box") {
-        liveBoxRef.current?.setPoints(start, point);
+      } else if (tool === "arrow" || tool === "box") {
+        // Flechas/cuadros: puntos de pantalla (inicio + actual).
+        const sp = dragStartPixelRef.current;
+        const startScreen: ScreenPoint = sp
+          ? {
+              nx: paneW > 0 ? sp.x / paneW : 0,
+              ny: paneH > 0 ? sp.y / paneH : 0,
+            }
+          : screenPoint;
+        if (tool === "arrow") liveArrowRef.current?.setPoints(startScreen, screenPoint);
+        else liveBoxRef.current?.setPoints(startScreen, screenPoint);
       } else if (tool === "measure") {
         const bars = Math.abs(Math.round(point.logical) - Math.round(start.logical));
         liveMeasureRef.current?.setPoints(start, point, bars);
@@ -2385,21 +2439,17 @@ export function CandleChart({
           ["arrow", arrowObjectsRef.current],
           ["box", boxObjectsRef.current],
         ];
+        const { w: paneW, h: paneH } = paneSizeRef.current;
         for (const [kind, objs] of marks) {
           for (const [id, primitive] of Object.entries(objs)) {
             if (!primitive.hitTestBody(pixel.x, pixel.y)) continue;
-            const p1x = logicalToX(chart, primitive.p1.logical);
-            const p1y = series.priceToCoordinate(primitive.p1.price);
-            const p2x = logicalToX(chart, primitive.p2.logical);
-            const p2y = series.priceToCoordinate(primitive.p2.price);
-            if (p1x === null || p1y === null || p2x === null || p2y === null) return;
             rightDragArrowRef.current = {
               kind,
               id,
-              p1x,
-              p1y,
-              p2x,
-              p2y,
+              p1x: primitive.p1.nx * paneW,
+              p1y: primitive.p1.ny * paneH,
+              p2x: primitive.p2.nx * paneW,
+              p2y: primitive.p2.ny * paneH,
               startClientX: e.clientX,
               startClientY: e.clientY,
               menuX: e.offsetX,
@@ -2474,6 +2524,7 @@ export function CandleChart({
       }
 
       dragStartRef.current = start;
+      dragStartPixelRef.current = lastHoverPixelRef.current;
       isDraggingRef.current = true;
       // Congelar el paneo/zoom del gráfico mientras se traza la línea nueva.
       // Sin esto, el mismo clic-arrastrar que dibuja también desplazaba el
@@ -2481,16 +2532,23 @@ export function CandleChart({
       // (lo reportó Alejo). Se reactiva al soltar, en onMouseUp.
       chart.applyOptions({ handleScroll: false, handleScale: false });
 
+      // Punto de pantalla inicial, para flechas/cuadros.
+      const sp0 = lastHoverPixelRef.current;
+      const startScreen: ScreenPoint = {
+        nx: sp0 && paneSizeRef.current.w > 0 ? sp0.x / paneSizeRef.current.w : 0,
+        ny: sp0 && paneSizeRef.current.h > 0 ? sp0.y / paneSizeRef.current.h : 0,
+      };
+
       if (tool === "trend") {
         const primitive = new TrendLinePrimitive(chart, series, start, start);
         series.attachPrimitive(primitive);
         liveTrendRef.current = primitive;
       } else if (tool === "arrow") {
-        const primitive = new ArrowPrimitive(chart, series, start, start);
+        const primitive = new ArrowPrimitive(startScreen, startScreen);
         series.attachPrimitive(primitive);
         liveArrowRef.current = primitive;
       } else if (tool === "box") {
-        const primitive = new BoxPrimitive(chart, series, start, start);
+        const primitive = new BoxPrimitive(startScreen, startScreen);
         series.attachPrimitive(primitive);
         liveBoxRef.current = primitive;
       } else if (tool === "measure") {
@@ -2510,25 +2568,19 @@ export function CandleChart({
       }
     }
 
-    // Traslada la flecha entera mientras se arrastra con el botón derecho.
+    // Traslada la flecha/cuadro entero mientras se arrastra con el botón
+    // derecho. Como están anclados a la pantalla, solo hay que sumar el
+    // desplazamiento en píxeles y volver a fracción del panel.
     function onRightDragMove(e: MouseEvent) {
       const drag = rightDragArrowRef.current;
-      const chart = chartRef.current;
-      const series = candleSeriesRef.current;
-      if (!drag || !chart || !series) return;
+      if (!drag) return;
       const dx = e.clientX - drag.startClientX;
       const dy = e.clientY - drag.startClientY;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-      const ts = chart.timeScale();
-      const toPoint = (px: number, py: number): DrawPoint | null => {
-        const logical = ts.coordinateToLogical(px);
-        const price = series.coordinateToPrice(py);
-        if (logical === null || price === null) return null;
-        return { logical: logical as number, price };
-      };
-      const np1 = toPoint(drag.p1x + dx, drag.p1y + dy);
-      const np2 = toPoint(drag.p2x + dx, drag.p2y + dy);
-      if (!np1 || !np2) return;
+      const { w, h } = paneSizeRef.current;
+      if (w <= 0 || h <= 0) return;
+      const np1: ScreenPoint = { nx: (drag.p1x + dx) / w, ny: (drag.p1y + dy) / h };
+      const np2: ScreenPoint = { nx: (drag.p2x + dx) / w, ny: (drag.p2y + dy) / h };
       if (drag.kind === "arrow") arrowObjectsRef.current[drag.id]?.setPoints(np1, np2);
       else boxObjectsRef.current[drag.id]?.setPoints(np1, np2);
     }
@@ -2613,13 +2665,22 @@ export function CandleChart({
       const tool = drawToolRef.current;
       const start = dragStartRef.current;
       const end = lastHoverPointRef.current;
+      const startPixel = dragStartPixelRef.current;
+      const endPixel = lastHoverPixelRef.current;
       dragStartRef.current = null;
+      dragStartPixelRef.current = null;
       const series = candleSeriesRef.current;
 
       // Se descarta si el arrastre fue tan corto que no se ve distinto de
       // un clic sin querer — mejor no dejar una línea de un solo punto.
       const huboMovimiento =
         !!start && !!end && (start.logical !== end.logical || start.price !== end.price);
+      // Puntos de pantalla (flechas/cuadros): del píxel inicial y final.
+      const { w: paneW, h: paneH } = paneSizeRef.current;
+      const toScr = (p: { x: number; y: number }): ScreenPoint => ({
+        nx: paneW > 0 ? p.x / paneW : 0,
+        ny: paneH > 0 ? p.y / paneH : 0,
+      });
 
       if (tool === "trend" && liveTrendRef.current) {
         if (series) series.detachPrimitive(liveTrendRef.current);
@@ -2628,11 +2689,11 @@ export function CandleChart({
       } else if (tool === "arrow" && liveArrowRef.current) {
         if (series) series.detachPrimitive(liveArrowRef.current);
         liveArrowRef.current = null;
-        if (huboMovimiento && start && end) addArrow(start, end);
+        if (huboMovimiento && startPixel && endPixel) addArrow(toScr(startPixel), toScr(endPixel));
       } else if (tool === "box" && liveBoxRef.current) {
         if (series) series.detachPrimitive(liveBoxRef.current);
         liveBoxRef.current = null;
-        if (huboMovimiento && start && end) addBox(start, end);
+        if (huboMovimiento && startPixel && endPixel) addBox(toScr(startPixel), toScr(endPixel));
       } else if (tool === "measure" && liveMeasureRef.current) {
         if (series) series.detachPrimitive(liveMeasureRef.current);
         liveMeasureRef.current = null;
@@ -3024,12 +3085,11 @@ export function CandleChart({
   }, []);
 
   const addArrow = useCallback(
-    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
-      const chart = chartRef.current;
+    (p1: ScreenPoint, p2: ScreenPoint, color: string = MARK_GREEN) => {
       const series = candleSeriesRef.current;
-      if (!chart || !series) return;
+      if (!series) return;
       const id = `${Date.now()}-${Math.random()}`;
-      const primitive = new ArrowPrimitive(chart, series, p1, p2, color);
+      const primitive = new ArrowPrimitive(p1, p2, color);
       series.attachPrimitive(primitive);
       arrowObjectsRef.current[id] = primitive;
       setArrowLines((prev) => [...prev, { id, p1, p2, color }]);
@@ -3055,12 +3115,11 @@ export function CandleChart({
   }, []);
 
   const addBox = useCallback(
-    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
-      const chart = chartRef.current;
+    (p1: ScreenPoint, p2: ScreenPoint, color: string = MARK_GREEN) => {
       const series = candleSeriesRef.current;
-      if (!chart || !series) return;
+      if (!series) return;
       const id = `${Date.now()}-${Math.random()}`;
-      const primitive = new BoxPrimitive(chart, series, p1, p2, color);
+      const primitive = new BoxPrimitive(p1, p2, color);
       series.attachPrimitive(primitive);
       boxObjectsRef.current[id] = primitive;
       setBoxShapes((prev) => [...prev, { id, p1, p2, color }]);
@@ -3230,8 +3289,8 @@ export function CandleChart({
       const saved = JSON.parse(raw) as {
         horizontalLines?: { price: number }[];
         trendLines?: { p1: DrawPoint; p2: DrawPoint }[];
-        arrowLines?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
-        boxShapes?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
+        arrowLines?: { p1: ScreenPoint; p2: ScreenPoint; color?: string }[];
+        boxShapes?: { p1: ScreenPoint; p2: ScreenPoint; color?: string }[];
         measureLines?: { p1: DrawPoint; p2: DrawPoint }[];
         regressionLines?: { fromLogical: number; toLogical: number }[];
         textBoxes?: TextBoxState[];
