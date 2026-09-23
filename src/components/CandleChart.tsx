@@ -152,20 +152,6 @@ const PALETTES: Record<Theme, Palette> = {
 // real en esa posición.
 type DrawPoint = { logical: number; price: number };
 
-// Punto ANCLADO A LA PANTALLA (fracción 0..1 del ancho/alto del panel del
-// gráfico), no al precio/tiempo. Lo usan las flechas y los cuadros: a
-// pedido de Alejo, deben quedarse fijos donde uno los pone en el marco,
-// sin "pegarse al precio" (que se mueve cuando el eje se reescala con
-// datos nuevos). El resto de dibujos (tendencia, regla, regresión) sí
-// siguen ancladas a la vela con DrawPoint.
-type ScreenPoint = { nx: number; ny: number };
-
-// Tamaño en píxeles del panel del gráfico (área de dibujo, sin el eje de
-// precio ni el de tiempo). Lo actualiza PaneSizeRecorder en cada repintado
-// y sirve para convertir píxeles <-> fracción al crear/mover flechas y
-// cuadros. Vive en un ref del componente (paneSizeRef).
-type PaneSize = { w: number; h: number };
-
 type DrawTool =
   | "none"
   | "horizontal"
@@ -228,6 +214,15 @@ function logicalToX(chart: IChartApi, logical: number): number | null {
 // primera vez a `paneViews()`, no los que tiene ahora.
 class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
+  // Oculto con un ojo (el de cada objeto o el maestro "Dibujos"): sigue
+  // enganchado al gráfico, solo no se pinta ni se puede agarrar.
+  hidden = false;
+
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    this.requestUpdate?.();
+  }
 
   constructor(
     private chart: IChartApi,
@@ -250,6 +245,7 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
   // `null` si el clic no cayó cerca de ningún extremo — si no, cuál de los
   // dos ("p1" o "p2") para que quien llama sepa cuál mover.
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    if (this.hidden) return null;
     const { chart, series, p1, p2 } = this;
     for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
       const px = logicalToX(chart, p.logical);
@@ -267,6 +263,7 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
+              if (primitive.hidden) return;
               const { chart, series, p1, p2, color } = primitive;
               const x1 = logicalToX(chart, p1.logical);
               const y1 = series.priceToCoordinate(p1.price);
@@ -317,19 +314,41 @@ function distToSegment(
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
-// Flecha — con una punta en `p2` y un color que se puede cambiar
-// (verde/rojo) con clic derecho. Sirve para marcar hacia dónde se espera
-// el precio. Anclada a la PANTALLA (ScreenPoint), no al precio: se queda
-// fija donde uno la pone en el marco, aunque el eje se reescale. "Rota"
-// porque apunta hacia donde se arrastró; se reagarra cualquiera de sus dos
-// extremos para reorientarla.
+// Punto del gráfico (vela lógica + precio) → píxeles del panel, o null si
+// todavía no se puede convertir (sin datos o sin escala).
+function drawPointToPx(
+  chart: IChartApi,
+  series: ISeriesApi<"Candlestick">,
+  p: DrawPoint
+): [number, number] | null {
+  const x = logicalToX(chart, p.logical);
+  const y = series.priceToCoordinate(p.price);
+  if (x === null || y === null) return null;
+  return [x, y];
+}
+
+// Flecha — con una punta en `p2` y un color (verde/rojo) que se cambia con
+// clic derecho. Anclada al GRÁFICO (vela + precio), igual que la línea de
+// tendencia: queda pegada a las velas donde uno la deja y se desplaza con
+// ellas. Se mueve entera agarrándola con clic izquierdo (el gráfico se
+// congela mientras tanto); los extremos se reagarran para reorientarla.
 class ArrowPrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
-  private lastSize: PaneSize = { w: 0, h: 0 };
+  // Oculto con un ojo (el de cada objeto o el maestro "Dibujos"): sigue
+  // enganchado al gráfico, solo no se pinta ni se puede agarrar.
+  hidden = false;
+
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    this.requestUpdate?.();
+  }
 
   constructor(
-    public p1: ScreenPoint,
-    public p2: ScreenPoint,
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    public p1: DrawPoint,
+    public p2: DrawPoint,
     public color: string = MARK_GREEN
   ) {}
 
@@ -337,7 +356,7 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = param.requestUpdate;
   }
 
-  setPoints(p1: ScreenPoint, p2: ScreenPoint): void {
+  setPoints(p1: DrawPoint, p2: DrawPoint): void {
     this.p1 = p1;
     this.p2 = p2;
     this.requestUpdate?.();
@@ -348,22 +367,22 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  private toPx(p: ScreenPoint): [number, number] {
-    return [p.nx * this.lastSize.w, p.ny * this.lastSize.h];
-  }
-
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    if (this.hidden) return null;
     for (const [key, p] of [["p1", this.p1], ["p2", this.p2]] as const) {
-      const [px, py] = this.toPx(p);
-      if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
+      const px = drawPointToPx(this.chart, this.series, p);
+      if (!px) continue;
+      if (Math.hypot(px[0] - x, px[1] - y) <= HANDLE_HIT_RADIUS) return key;
     }
     return null;
   }
 
   hitTestBody(x: number, y: number): boolean {
-    const [x1, y1] = this.toPx(this.p1);
-    const [x2, y2] = this.toPx(this.p2);
-    return distToSegment(x, y, x1, y1, x2, y2) <= 8;
+    if (this.hidden) return false;
+    const a = drawPointToPx(this.chart, this.series, this.p1);
+    const b = drawPointToPx(this.chart, this.series, this.p2);
+    if (!a || !b) return false;
+    return distToSegment(x, y, a[0], a[1], b[0], b[1]) <= 8;
   }
 
   paneViews(): ISeriesPrimitivePaneView[] {
@@ -373,13 +392,14 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
-              target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-                primitive.lastSize = { w: mediaSize.width, h: mediaSize.height };
-                const { p1, p2, color } = primitive;
-                const x1 = p1.nx * mediaSize.width;
-                const y1 = p1.ny * mediaSize.height;
-                const x2 = p2.nx * mediaSize.width;
-                const y2 = p2.ny * mediaSize.height;
+              if (primitive.hidden) return;
+              const { chart, series, p1, p2, color } = primitive;
+              const a = drawPointToPx(chart, series, p1);
+              const b = drawPointToPx(chart, series, p2);
+              if (!a || !b) return;
+              const [x1, y1] = a;
+              const [x2, y2] = b;
+              target.useMediaCoordinateSpace(({ context }) => {
                 context.save();
                 context.strokeStyle = color;
                 context.fillStyle = color;
@@ -418,18 +438,28 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
   }
 }
 
-// Cuadro — un rectángulo de color (verde/rojo) para marcar zonas del
-// gráfico y dar ejemplos. Igual que la flecha: se traza arrastrando de una
-// esquina a la opuesta, se puede reagarrar cualquiera de esas dos esquinas
-// para redimensionarlo, mover entero con clic derecho sostenido, y cambiar
-// su color con clic derecho seco.
+// Cuadro — un rectángulo de color (verde/rojo) para marcar zonas y dar
+// ejemplos. Anclado al GRÁFICO igual que la flecha: queda pegado a las
+// velas donde se deja. Se mueve entero con clic izquierdo sobre él, se
+// redimensiona agarrando las esquinas, y el color se cambia con clic
+// derecho.
 class BoxPrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
-  private lastSize: PaneSize = { w: 0, h: 0 };
+  // Oculto con un ojo (el de cada objeto o el maestro "Dibujos"): sigue
+  // enganchado al gráfico, solo no se pinta ni se puede agarrar.
+  hidden = false;
+
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    this.requestUpdate?.();
+  }
 
   constructor(
-    public p1: ScreenPoint,
-    public p2: ScreenPoint,
+    private chart: IChartApi,
+    private series: ISeriesApi<"Candlestick">,
+    public p1: DrawPoint,
+    public p2: DrawPoint,
     public color: string = MARK_GREEN
   ) {}
 
@@ -437,7 +467,7 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = param.requestUpdate;
   }
 
-  setPoints(p1: ScreenPoint, p2: ScreenPoint): void {
+  setPoints(p1: DrawPoint, p2: DrawPoint): void {
     this.p1 = p1;
     this.p2 = p2;
     this.requestUpdate?.();
@@ -448,26 +478,26 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  private toPx(p: ScreenPoint): [number, number] {
-    return [p.nx * this.lastSize.w, p.ny * this.lastSize.h];
-  }
-
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    if (this.hidden) return null;
     for (const [key, p] of [["p1", this.p1], ["p2", this.p2]] as const) {
-      const [px, py] = this.toPx(p);
-      if (Math.hypot(px - x, py - y) <= HANDLE_HIT_RADIUS) return key;
+      const px = drawPointToPx(this.chart, this.series, p);
+      if (!px) continue;
+      if (Math.hypot(px[0] - x, px[1] - y) <= HANDLE_HIT_RADIUS) return key;
     }
     return null;
   }
 
   hitTestBody(x: number, y: number): boolean {
-    const [x1, y1] = this.toPx(this.p1);
-    const [x2, y2] = this.toPx(this.p2);
+    if (this.hidden) return false;
+    const a = drawPointToPx(this.chart, this.series, this.p1);
+    const b = drawPointToPx(this.chart, this.series, this.p2);
+    if (!a || !b) return false;
     return (
-      x >= Math.min(x1, x2) &&
-      x <= Math.max(x1, x2) &&
-      y >= Math.min(y1, y2) &&
-      y <= Math.max(y1, y2)
+      x >= Math.min(a[0], b[0]) &&
+      x <= Math.max(a[0], b[0]) &&
+      y >= Math.min(a[1], b[1]) &&
+      y <= Math.max(a[1], b[1])
     );
   }
 
@@ -478,13 +508,14 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
-              target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-                primitive.lastSize = { w: mediaSize.width, h: mediaSize.height };
-                const { p1, p2, color } = primitive;
-                const x1 = p1.nx * mediaSize.width;
-                const y1 = p1.ny * mediaSize.height;
-                const x2 = p2.nx * mediaSize.width;
-                const y2 = p2.ny * mediaSize.height;
+              if (primitive.hidden) return;
+              const { chart, series, p1, p2, color } = primitive;
+              const a = drawPointToPx(chart, series, p1);
+              const b = drawPointToPx(chart, series, p2);
+              if (!a || !b) return;
+              const [x1, y1] = a;
+              const [x2, y2] = b;
+              target.useMediaCoordinateSpace(({ context }) => {
                 const left = Math.min(x1, x2);
                 const top = Math.min(y1, y2);
                 const w = Math.abs(x2 - x1);
@@ -511,31 +542,6 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
   }
 }
 
-// Registrador invisible del tamaño del panel — se adjunta siempre y guarda
-// el ancho/alto del área de dibujo en un ref, para poder convertir píxeles
-// a fracción de pantalla al CREAR una flecha/cuadro nuevos (cuando todavía
-// no hay ninguno dibujado que reporte su tamaño).
-class PaneSizeRecorder implements ISeriesPrimitive<Time> {
-  constructor(private onSize: (s: PaneSize) => void) {}
-  paneViews(): ISeriesPrimitivePaneView[] {
-    const onSize = this.onSize;
-    return [
-      {
-        renderer(): ISeriesPrimitivePaneRenderer {
-          return {
-            draw() {},
-            drawBackground(target: CanvasRenderingTarget2D) {
-              target.useMediaCoordinateSpace(({ mediaSize }) => {
-                onSize({ w: mediaSize.width, h: mediaSize.height });
-              });
-            },
-          };
-        },
-      },
-    ];
-  }
-}
-
 // Regla de medición — un rectángulo semitransparente entre dos puntos, con
 // una etiqueta mostrando la diferencia de precio, el % y cuántas velas hay
 // de por medio. Igual que la "regla" de TradingView: se traza libre y
@@ -543,6 +549,15 @@ class PaneSizeRecorder implements ISeriesPrimitive<Time> {
 // ajustarla, sin tener que borrarla y volver a empezar.
 class MeasurePrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
+  // Oculto con un ojo (el de cada objeto o el maestro "Dibujos"): sigue
+  // enganchado al gráfico, solo no se pinta ni se puede agarrar.
+  hidden = false;
+
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    this.requestUpdate?.();
+  }
 
   constructor(
     private chart: IChartApi,
@@ -564,6 +579,7 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
   }
 
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
+    if (this.hidden) return null;
     const { chart, series, p1, p2 } = this;
     for (const [key, p] of [["p1", p1], ["p2", p2]] as const) {
       const px = logicalToX(chart, p.logical);
@@ -581,6 +597,7 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
+              if (primitive.hidden) return;
               const { chart, series, p1, p2, barsBetween } = primitive;
               const subiendo = p2.price >= p1.price;
               // Mismo verde/rojo de siempre pero un poco más oscuros (80% de
@@ -671,6 +688,15 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
 // solo.
 class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
+  // Oculto con un ojo (el de cada objeto o el maestro "Dibujos"): sigue
+  // enganchado al gráfico, solo no se pinta ni se puede agarrar.
+  hidden = false;
+
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    this.requestUpdate?.();
+  }
 
   constructor(
     private chart: IChartApi,
@@ -701,6 +727,7 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
         renderer(): ISeriesPrimitivePaneRenderer {
           return {
             draw(target: CanvasRenderingTarget2D) {
+              if (primitive.hidden) return;
               const { chart, series, fromLogical, toLogical, getCandles } = primitive;
               const all = getCandles() ?? [];
               const i1 = Math.max(0, Math.round(Math.min(fromLogical, toLogical)));
@@ -1673,17 +1700,13 @@ function ObjectsPanel({
   onToggleDayBands: () => void;
   horizontalLines: { id: string; price: number }[];
   trendLines: { id: string; p1: DrawPoint; p2: DrawPoint }[];
-  arrowLines: { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[];
-  boxShapes: { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[];
+  arrowLines: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
+  boxShapes: { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[];
   measureLines: { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[];
   regressionLines: { id: string; fromLogical: number; toLogical: number }[];
   textBoxes: TextBoxState[];
   hiddenDrawings: Set<string>;
-  onToggleVisible: (
-    kind: "horizontal" | "trend" | "arrow" | "box" | "measure" | "regression" | "text",
-    id: string,
-    price?: number
-  ) => void;
+  onToggleVisible: (id: string) => void;
   onRemoveHorizontalLine: (id: string) => void;
   onRemoveTrendLine: (id: string) => void;
   onRemoveArrow: (id: string) => void;
@@ -1753,7 +1776,7 @@ function ObjectsPanel({
         </span>
         <button
           type="button"
-          onClick={() => onToggleVisible(kind, id, price)}
+          onClick={() => onToggleVisible(id)}
           title={visible ? "Ocultar" : "Mostrar"}
           aria-label={visible ? `Ocultar ${label}` : `Mostrar ${label}`}
           style={{ color: visible ? palette.buttonText : palette.textSoft }}
@@ -1950,15 +1973,14 @@ export function CandleChart({
   const [trendLines, setTrendLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint }[]
   >([]);
-  // Flechas (marcar compra/venta) — ancladas a la pantalla (ScreenPoint),
-  // no al precio, para que se queden fijas donde uno las pone. Guardan su
-  // color (verde/rojo).
+  // Flechas (marcar compra/venta) — ancladas a las velas como la tendencia.
+  // Guardan su color (verde/rojo).
   const [arrowLines, setArrowLines] = useState<
-    { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[]
+    { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
   >([]);
   // Cuadros (marcar zonas) — mismo formato que las flechas.
   const [boxShapes, setBoxShapes] = useState<
-    { id: string; p1: ScreenPoint; p2: ScreenPoint; color: string }[]
+    { id: string; p1: DrawPoint; p2: DrawPoint; color: string }[]
   >([]);
   const [measureLines, setMeasureLines] = useState<
     { id: string; p1: DrawPoint; p2: DrawPoint; bars: number }[]
@@ -2077,17 +2099,16 @@ export function CandleChart({
   const liveArrowRef = useRef<ArrowPrimitive | null>(null);
   const liveBoxRef = useRef<BoxPrimitive | null>(null);
   const liveMeasureRef = useRef<MeasurePrimitive | null>(null);
-  // Tamaño del panel (lo llena PaneSizeRecorder) y píxel donde empezó el
-  // arrastre — para las flechas/cuadros, que se anclan a la pantalla.
-  const paneSizeRef = useRef<PaneSize>({ w: 0, h: 0 });
-  const dragStartPixelRef = useRef<{ x: number; y: number } | null>(null);
-  // Arrastre de una flecha ENTERA con clic derecho sostenido (mover, no
-  // reorientar). Guarda su id, los píxeles de sus dos extremos al empezar,
-  // el punto del cursor al empezar y si de verdad se movió (para decidir en
-  // el mouseup: si se movió = mover; si no = abrir el menú de color).
-  const rightDragArrowRef = useRef<{
+  // Arrastre de una flecha/cuadro ENTERO (mover, no reorientar) — con clic
+  // izquierdo sobre la figura, o con clic derecho sostenido. Guarda su id,
+  // qué botón se usó, los píxeles de sus dos extremos al empezar, el punto
+  // del cursor al empezar y si de verdad se movió. En el mouseup: si se
+  // movió = queda movida; si no se movió y fue clic derecho = abre el menú
+  // de color.
+  const markDragRef = useRef<{
     kind: "arrow" | "box";
     id: string;
+    button: number;
     p1x: number;
     p1y: number;
     p2x: number;
@@ -2285,15 +2306,6 @@ export function CandleChart({
       () => dataRef.current?.candles,
       () => INTRADAY_TIMEFRAMES.has(timeframeRef.current)
     );
-
-    // Registrador del tamaño del panel — siempre adjunto, para poder
-    // convertir píxeles a fracción de pantalla al crear flechas/cuadros.
-    candleSeries.attachPrimitive(
-      new PaneSizeRecorder((s) => {
-        paneSizeRef.current = s;
-      })
-    );
-
     const resize = () => {
       if (containerRef.current) {
         const width = containerRef.current.clientWidth;
@@ -2345,14 +2357,6 @@ export function CandleChart({
       const point: DrawPoint = { logical, price };
       lastHoverPointRef.current = point;
       lastHoverPixelRef.current = { x: param.point.x, y: param.point.y };
-      // Punto anclado a la pantalla (para flechas/cuadros): fracción del
-      // panel. No usa precio/tiempo, así que no se "pega" al precio.
-      const paneW = paneSizeRef.current.w;
-      const paneH = paneSizeRef.current.h;
-      const screenPoint: ScreenPoint = {
-        nx: paneW > 0 ? param.point.x / paneW : 0,
-        ny: paneH > 0 ? param.point.y / paneH : 0,
-      };
 
       // Arrastrando el tirador de un dibujo YA existente (ver editingRef) -
       // manda sobre dibujar uno nuevo, aunque en la práctica no compiten
@@ -2368,22 +2372,16 @@ export function CandleChart({
               editing.handle === "p1" ? other : point
             );
           }
-        } else if (editing.kind === "arrow") {
-          const primitive = arrowObjectsRef.current[editing.id];
+        } else if (editing.kind === "arrow" || editing.kind === "box") {
+          const primitive =
+            editing.kind === "arrow"
+              ? arrowObjectsRef.current[editing.id]
+              : boxObjectsRef.current[editing.id];
           if (primitive) {
             const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
             primitive.setPoints(
-              editing.handle === "p1" ? screenPoint : other,
-              editing.handle === "p1" ? other : screenPoint
-            );
-          }
-        } else if (editing.kind === "box") {
-          const primitive = boxObjectsRef.current[editing.id];
-          if (primitive) {
-            const other = editing.handle === "p1" ? primitive.p2 : primitive.p1;
-            primitive.setPoints(
-              editing.handle === "p1" ? screenPoint : other,
-              editing.handle === "p1" ? other : screenPoint
+              editing.handle === "p1" ? point : other,
+              editing.handle === "p1" ? other : point
             );
           }
         } else if (editing.kind === "measure") {
@@ -2404,17 +2402,10 @@ export function CandleChart({
       const tool = drawToolRef.current;
       if (tool === "trend") {
         liveTrendRef.current?.setPoints(start, point);
-      } else if (tool === "arrow" || tool === "box") {
-        // Flechas/cuadros: puntos de pantalla (inicio + actual).
-        const sp = dragStartPixelRef.current;
-        const startScreen: ScreenPoint = sp
-          ? {
-              nx: paneW > 0 ? sp.x / paneW : 0,
-              ny: paneH > 0 ? sp.y / paneH : 0,
-            }
-          : screenPoint;
-        if (tool === "arrow") liveArrowRef.current?.setPoints(startScreen, screenPoint);
-        else liveBoxRef.current?.setPoints(startScreen, screenPoint);
+      } else if (tool === "arrow") {
+        liveArrowRef.current?.setPoints(start, point);
+      } else if (tool === "box") {
+        liveBoxRef.current?.setPoints(start, point);
       } else if (tool === "measure") {
         const bars = Math.abs(Math.round(point.logical) - Math.round(start.logical));
         liveMeasureRef.current?.setPoints(start, point, bars);
@@ -2424,45 +2415,81 @@ export function CandleChart({
     }
     chart.subscribeCrosshairMove(onCrosshairMove);
 
+    // Posición EXACTA del evento en píxeles del panel (el panel empieza en la
+    // esquina del contenedor: el eje de precio va a la derecha). Se usa en
+    // cada clic en vez de la "última posición del crosshair": esa podía
+    // quedar vieja (p. ej. al soltar un arrastre y hacer clic en otro lado
+    // sin que el crosshair se hubiera actualizado), y el clic se aplicaba a
+    // la figura equivocada — el cuadro terminaba "pegado al mouse".
+    function syncHoverFromEvent(e: MouseEvent): void {
+      const el = containerRef.current;
+      const series = candleSeriesRef.current;
+      if (!el || !series) return;
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      lastHoverPixelRef.current = { x, y };
+      const logical = chart.timeScale().coordinateToLogical(x);
+      const price = series.coordinateToPrice(y);
+      lastHoverPointRef.current =
+        logical === null || price === null
+          ? null
+          : { logical: logical as number, price };
+    }
+
+    // Si el cursor está sobre una flecha o un cuadro, arma el arrastre para
+    // moverlo ENTERO (y congela el paneo del gráfico). Devuelve true si
+    // agarró una figura. Los píxeles de sus extremos se toman del gráfico
+    // (vela + precio) al empezar; el mousemove les suma el desplazamiento y
+    // los vuelve a convertir a vela + precio, así la figura sigue pegada a
+    // las velas después de soltarla.
+    function startMarkDrag(e: MouseEvent): boolean {
+      const pixel = lastHoverPixelRef.current;
+      const series = candleSeriesRef.current;
+      if (!pixel || !series) return false;
+      const marks: [
+        "arrow" | "box",
+        Record<string, ArrowPrimitive | BoxPrimitive>
+      ][] = [
+        ["arrow", arrowObjectsRef.current],
+        ["box", boxObjectsRef.current],
+      ];
+      for (const [kind, objs] of marks) {
+        for (const [id, primitive] of Object.entries(objs)) {
+          if (!primitive.hitTestBody(pixel.x, pixel.y)) continue;
+          const a = drawPointToPx(chart, series, primitive.p1);
+          const b = drawPointToPx(chart, series, primitive.p2);
+          if (!a || !b) return false;
+          markDragRef.current = {
+            kind,
+            id,
+            button: e.button,
+            p1x: a[0],
+            p1y: a[1],
+            p2x: b[0],
+            p2y: b[1],
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            menuX: pixel.x,
+            menuY: pixel.y,
+            moved: false,
+          };
+          chart.applyOptions({ handleScroll: false, handleScale: false });
+          return true;
+        }
+      }
+      return false;
+    }
+
     function onMouseDown(e: MouseEvent) {
       const tool = drawToolRef.current;
       const series = candleSeriesRef.current;
+      syncHoverFromEvent(e);
 
-      // Botón derecho sostenido sobre una flecha = mover la flecha entera.
-      // Se arma el arrastre acá; el mousemove la traslada y el mouseup
-      // decide (si se movió = quedó movida; si no = abrir el menú de color).
+      // Botón derecho sobre una flecha/cuadro: sostenido y arrastrando la
+      // mueve; seco (sin arrastrar) abre el menú de color en el mouseup.
       if (e.button === 2) {
-        const pixel = lastHoverPixelRef.current;
-        const chart = chartRef.current;
-        if (!pixel || !chart || !series) return;
-        const marks: [
-          "arrow" | "box",
-          Record<string, ArrowPrimitive | BoxPrimitive>
-        ][] = [
-          ["arrow", arrowObjectsRef.current],
-          ["box", boxObjectsRef.current],
-        ];
-        const { w: paneW, h: paneH } = paneSizeRef.current;
-        for (const [kind, objs] of marks) {
-          for (const [id, primitive] of Object.entries(objs)) {
-            if (!primitive.hitTestBody(pixel.x, pixel.y)) continue;
-            rightDragArrowRef.current = {
-              kind,
-              id,
-              p1x: primitive.p1.nx * paneW,
-              p1y: primitive.p1.ny * paneH,
-              p2x: primitive.p2.nx * paneW,
-              p2y: primitive.p2.ny * paneH,
-              startClientX: e.clientX,
-              startClientY: e.clientY,
-              menuX: e.offsetX,
-              menuY: e.offsetY,
-              moved: false,
-            };
-            chart.applyOptions({ handleScroll: false, handleScale: false });
-            return;
-          }
-        }
+        startMarkDrag(e);
         return;
       }
       // De aquí en adelante, solo el botón izquierdo dibuja/edita.
@@ -2508,11 +2535,18 @@ export function CandleChart({
             return;
           }
         }
+        // Ningún tirador: si el clic cayó sobre el cuerpo de una flecha o un
+        // cuadro, se agarra para moverla entera (clic izquierdo normal). Si
+        // no, el clic sigue de largo y el gráfico se desplaza como siempre.
+        startMarkDrag(e);
         return;
       }
 
       const start = lastHoverPointRef.current;
       if (!series || !start) return;
+      // Dibujar algo nuevo con el ojo maestro apagado lo reenciende — si
+      // no, el dibujo nuevo quedaría oculto y parecería que no pasó nada.
+      setDrawingsHidden(false);
 
       if (tool === "horizontal") {
         addHorizontalLine(start.price);
@@ -2527,7 +2561,6 @@ export function CandleChart({
       }
 
       dragStartRef.current = start;
-      dragStartPixelRef.current = lastHoverPixelRef.current;
       isDraggingRef.current = true;
       // Congelar el paneo/zoom del gráfico mientras se traza la línea nueva.
       // Sin esto, el mismo clic-arrastrar que dibuja también desplazaba el
@@ -2535,23 +2568,16 @@ export function CandleChart({
       // (lo reportó Alejo). Se reactiva al soltar, en onMouseUp.
       chart.applyOptions({ handleScroll: false, handleScale: false });
 
-      // Punto de pantalla inicial, para flechas/cuadros.
-      const sp0 = lastHoverPixelRef.current;
-      const startScreen: ScreenPoint = {
-        nx: sp0 && paneSizeRef.current.w > 0 ? sp0.x / paneSizeRef.current.w : 0,
-        ny: sp0 && paneSizeRef.current.h > 0 ? sp0.y / paneSizeRef.current.h : 0,
-      };
-
       if (tool === "trend") {
         const primitive = new TrendLinePrimitive(chart, series, start, start);
         series.attachPrimitive(primitive);
         liveTrendRef.current = primitive;
       } else if (tool === "arrow") {
-        const primitive = new ArrowPrimitive(startScreen, startScreen);
+        const primitive = new ArrowPrimitive(chart, series, start, start);
         series.attachPrimitive(primitive);
         liveArrowRef.current = primitive;
       } else if (tool === "box") {
-        const primitive = new BoxPrimitive(startScreen, startScreen);
+        const primitive = new BoxPrimitive(chart, series, start, start);
         series.attachPrimitive(primitive);
         liveBoxRef.current = primitive;
       } else if (tool === "measure") {
@@ -2571,32 +2597,41 @@ export function CandleChart({
       }
     }
 
-    // Traslada la flecha/cuadro entero mientras se arrastra con el botón
-    // derecho. Como están anclados a la pantalla, solo hay que sumar el
-    // desplazamiento en píxeles y volver a fracción del panel.
-    function onRightDragMove(e: MouseEvent) {
-      const drag = rightDragArrowRef.current;
-      if (!drag) return;
+    // Traslada la flecha/cuadro entero mientras se arrastra (clic izquierdo
+    // sobre la figura, o derecho sostenido). Suma el desplazamiento del
+    // cursor a los píxeles de partida y los vuelve a convertir a vela +
+    // precio — la figura sigue pegada a las velas al soltarla.
+    function onMarkDragMove(e: MouseEvent) {
+      const drag = markDragRef.current;
+      const series = candleSeriesRef.current;
+      if (!drag || !series) return;
       const dx = e.clientX - drag.startClientX;
       const dy = e.clientY - drag.startClientY;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-      const { w, h } = paneSizeRef.current;
-      if (w <= 0 || h <= 0) return;
-      const np1: ScreenPoint = { nx: (drag.p1x + dx) / w, ny: (drag.p1y + dy) / h };
-      const np2: ScreenPoint = { nx: (drag.p2x + dx) / w, ny: (drag.p2y + dy) / h };
+      if (!drag.moved) return;
+      const ts = chart.timeScale();
+      const toPoint = (px: number, py: number): DrawPoint | null => {
+        const logical = ts.coordinateToLogical(px);
+        const price = series.coordinateToPrice(py);
+        if (logical === null || price === null) return null;
+        return { logical: logical as number, price };
+      };
+      const np1 = toPoint(drag.p1x + dx, drag.p1y + dy);
+      const np2 = toPoint(drag.p2x + dx, drag.p2y + dy);
+      if (!np1 || !np2) return;
       if (drag.kind === "arrow") arrowObjectsRef.current[drag.id]?.setPoints(np1, np2);
       else boxObjectsRef.current[drag.id]?.setPoints(np1, np2);
     }
-    window.addEventListener("mousemove", onRightDragMove);
+    window.addEventListener("mousemove", onMarkDragMove);
 
     function onMouseUp() {
-      // Fin del arrastre derecho de una flecha entera: si se movió, se
-      // confirma la nueva posición en el estado; si no se movió (fue un
-      // clic derecho seco), se abre el menú de color. En ambos casos se
-      // reactiva el paneo/zoom.
-      const rd = rightDragArrowRef.current;
+      // Fin del arrastre de una flecha/cuadro entero: si se movió, se
+      // confirma la nueva posición en el estado (y se guarda). Si no se
+      // movió y fue clic derecho seco, se abre el menú de color. En ambos
+      // casos se reactiva el paneo/zoom.
+      const rd = markDragRef.current;
       if (rd) {
-        rightDragArrowRef.current = null;
+        markDragRef.current = null;
         chart.applyOptions({ handleScroll: true, handleScale: true });
         const primitive =
           rd.kind === "arrow"
@@ -2608,7 +2643,7 @@ export function CandleChart({
           setter((prev) =>
             prev.map((l) => (l.id === rd.id ? { ...l, p1, p2 } : l))
           );
-        } else {
+        } else if (!rd.moved && rd.button === 2) {
           setArrowMenu({ x: rd.menuX, y: rd.menuY, id: rd.id, kind: rd.kind });
         }
         return;
@@ -2668,22 +2703,13 @@ export function CandleChart({
       const tool = drawToolRef.current;
       const start = dragStartRef.current;
       const end = lastHoverPointRef.current;
-      const startPixel = dragStartPixelRef.current;
-      const endPixel = lastHoverPixelRef.current;
       dragStartRef.current = null;
-      dragStartPixelRef.current = null;
       const series = candleSeriesRef.current;
 
       // Se descarta si el arrastre fue tan corto que no se ve distinto de
       // un clic sin querer — mejor no dejar una línea de un solo punto.
       const huboMovimiento =
         !!start && !!end && (start.logical !== end.logical || start.price !== end.price);
-      // Puntos de pantalla (flechas/cuadros): del píxel inicial y final.
-      const { w: paneW, h: paneH } = paneSizeRef.current;
-      const toScr = (p: { x: number; y: number }): ScreenPoint => ({
-        nx: paneW > 0 ? p.x / paneW : 0,
-        ny: paneH > 0 ? p.y / paneH : 0,
-      });
 
       if (tool === "trend" && liveTrendRef.current) {
         if (series) series.detachPrimitive(liveTrendRef.current);
@@ -2692,11 +2718,11 @@ export function CandleChart({
       } else if (tool === "arrow" && liveArrowRef.current) {
         if (series) series.detachPrimitive(liveArrowRef.current);
         liveArrowRef.current = null;
-        if (huboMovimiento && startPixel && endPixel) addArrow(toScr(startPixel), toScr(endPixel));
+        if (huboMovimiento && start && end) addArrow(start, end);
       } else if (tool === "box" && liveBoxRef.current) {
         if (series) series.detachPrimitive(liveBoxRef.current);
         liveBoxRef.current = null;
-        if (huboMovimiento && startPixel && endPixel) addBox(toScr(startPixel), toScr(endPixel));
+        if (huboMovimiento && start && end) addBox(start, end);
       } else if (tool === "measure" && liveMeasureRef.current) {
         if (series) series.detachPrimitive(liveMeasureRef.current);
         liveMeasureRef.current = null;
@@ -2708,15 +2734,21 @@ export function CandleChart({
       }
       setDrawTool("none");
     }
-    containerRef.current.addEventListener("mousedown", onMouseDown);
+    // En fase de CAPTURA (`true`): así este handler corre ANTES que el del
+    // propio gráfico. Hace falta para congelar el paneo a tiempo cuando se
+    // agarra una flecha/cuadro o se empieza a dibujar — si corriera
+    // después, el gráfico ya habría arrancado a desplazarse con el mismo
+    // arrastre.
+    containerRef.current.addEventListener("mousedown", onMouseDown, true);
     // En `window`, no en el contenedor: si sueltan el botón fuera del
     // gráfico (arrastraron hacia afuera) el arrastre igual debe terminar.
     window.addEventListener("mouseup", onMouseUp);
 
-    // Clic derecho sobre una flecha: se suprime el menú del navegador. El
-    // menú de color propio lo abre onMouseUp cuando el clic derecho fue
-    // "seco" (sin arrastre) — ver rightDragArrowRef.
+    // Clic derecho sobre una flecha/cuadro: se suprime el menú del
+    // navegador. El menú de color propio lo abre onMouseUp cuando el clic
+    // derecho fue "seco" (sin arrastre) — ver markDragRef.
     function onContextMenu(e: MouseEvent) {
+      syncHoverFromEvent(e);
       const pixel = lastHoverPixelRef.current;
       if (!pixel) return;
       const all = [
@@ -2735,9 +2767,9 @@ export function CandleChart({
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
       chart.unsubscribeCrosshairMove(onCrosshairMove);
-      containerRef.current?.removeEventListener("mousedown", onMouseDown);
+      containerRef.current?.removeEventListener("mousedown", onMouseDown, true);
       containerRef.current?.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("mousemove", onRightDragMove);
+      window.removeEventListener("mousemove", onMarkDragMove);
       window.removeEventListener("mouseup", onMouseUp);
       observer.disconnect();
       chart.remove();
@@ -3088,11 +3120,12 @@ export function CandleChart({
   }, []);
 
   const addArrow = useCallback(
-    (p1: ScreenPoint, p2: ScreenPoint, color: string = MARK_GREEN) => {
+    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
+      const chart = chartRef.current;
       const series = candleSeriesRef.current;
-      if (!series) return;
+      if (!chart || !series) return;
       const id = `${Date.now()}-${Math.random()}`;
-      const primitive = new ArrowPrimitive(p1, p2, color);
+      const primitive = new ArrowPrimitive(chart, series, p1, p2, color);
       series.attachPrimitive(primitive);
       arrowObjectsRef.current[id] = primitive;
       setArrowLines((prev) => [...prev, { id, p1, p2, color }]);
@@ -3118,11 +3151,12 @@ export function CandleChart({
   }, []);
 
   const addBox = useCallback(
-    (p1: ScreenPoint, p2: ScreenPoint, color: string = MARK_GREEN) => {
+    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
+      const chart = chartRef.current;
       const series = candleSeriesRef.current;
-      if (!series) return;
+      if (!chart || !series) return;
       const id = `${Date.now()}-${Math.random()}`;
-      const primitive = new BoxPrimitive(p1, p2, color);
+      const primitive = new BoxPrimitive(chart, series, p1, p2, color);
       series.attachPrimitive(primitive);
       boxObjectsRef.current[id] = primitive;
       setBoxShapes((prev) => [...prev, { id, p1, p2, color }]);
@@ -3144,49 +3178,43 @@ export function CandleChart({
   }, []);
 
   // Ojo maestro "Dibujos": esconde TODOS los dibujos (sin borrarlos) y con
-  // otro clic los vuelve a mostrar. Al mostrar, respeta los que estaban
-  // ocultos uno por uno (hiddenDrawings) y no los reaparece.
+  // otro clic los vuelve a mostrar. Solo cambia el estado; el efecto de
+  // visibilidad (más abajo) marca cada figura como oculta o visible.
   const toggleAllDrawings = useCallback(() => {
-    const series = candleSeriesRef.current;
-    if (!series) return;
-    setDrawingsHidden((prev) => {
-      const willHide = !prev;
-      const prims = [
-        ...Object.entries(trendLineObjectsRef.current),
-        ...Object.entries(arrowObjectsRef.current),
-        ...Object.entries(boxObjectsRef.current),
-        ...Object.entries(measureObjectsRef.current),
-        ...Object.entries(regressionObjectsRef.current),
-      ];
-      try {
-        if (willHide) {
-          for (const [, p] of prims) series.detachPrimitive(p);
-          for (const pl of Object.values(horizontalLineObjectsRef.current)) {
-            series.removePriceLine(pl);
-          }
-          horizontalLineObjectsRef.current = {};
-        } else {
-          for (const [id, p] of prims) {
-            if (!hiddenDrawings.has(id)) series.attachPrimitive(p);
-          }
-          for (const l of horizontalLines) {
-            if (hiddenDrawings.has(l.id)) continue;
-            horizontalLineObjectsRef.current[l.id] = series.createPriceLine({
-              price: l.price,
-              color: "#60A5FA",
-              lineWidth: 2,
-              lineStyle: LineStyle.Solid,
-              axisLabelVisible: true,
-              title: "",
-            });
-          }
-        }
-      } catch {
-        // Si algo ya estaba desprendido/attachado, no pasa nada grave.
-      }
-      return willHide;
-    });
-  }, [hiddenDrawings, horizontalLines]);
+    setDrawingsHidden((v) => !v);
+  }, []);
+
+  // Aplica la visibilidad a cada dibujo: oculto si está apagado el ojo
+  // maestro o su propio ojo en el panel Objetos. Las figuras NUNCA se
+  // desenganchan del gráfico — solo dejan de pintarse (setHidden). Antes se
+  // desenganchaban/reenganchaban dentro de una actualización de estado de
+  // React, y al volver a mostrarlas no reaparecían (bug que salió probando
+  // con velas de prueba). Se vuelve a aplicar cuando cambia cualquier lista
+  // de dibujos, para que los nuevos respeten el estado actual.
+  useEffect(() => {
+    const oculto = (id: string) => drawingsHidden || hiddenDrawings.has(id);
+    const prims = [
+      ...Object.entries(trendLineObjectsRef.current),
+      ...Object.entries(arrowObjectsRef.current),
+      ...Object.entries(boxObjectsRef.current),
+      ...Object.entries(measureObjectsRef.current),
+      ...Object.entries(regressionObjectsRef.current),
+    ];
+    for (const [id, p] of prims) p.setHidden(oculto(id));
+    for (const [id, pl] of Object.entries(horizontalLineObjectsRef.current)) {
+      const visible = !oculto(id);
+      pl.applyOptions({ lineVisible: visible, axisLabelVisible: visible });
+    }
+  }, [
+    drawingsHidden,
+    hiddenDrawings,
+    horizontalLines,
+    trendLines,
+    arrowLines,
+    boxShapes,
+    measureLines,
+    regressionLines,
+  ]);
 
   // Cuántas velas hay entre los dos puntos de la regla — parte de lo que
   // muestra la etiqueta ("0,51 (0,58%) 6 barras", igual que TradingView).
@@ -3237,58 +3265,17 @@ export function CandleChart({
     setRegressionLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
-  // Mostrar/ocultar un dibujo con el ojo del panel Objetos, sin borrarlo.
-  // Para las primitivas (tendencia/regla/regresión) se desprende y se
-  // vuelve a enganchar; la línea horizontal se quita y se recrea desde su
-  // precio guardado; el texto se controla al renderizar (hiddenDrawings).
-  type DrawKind = "horizontal" | "trend" | "arrow" | "box" | "measure" | "regression" | "text";
-  const toggleDrawingVisible = useCallback(
-    (kind: DrawKind, id: string, price?: number) => {
-      const series = candleSeriesRef.current;
-      if (!series) return;
-      setHiddenDrawings((prev) => {
-        const next = new Set(prev);
-        const ocultar = !next.has(id);
-        if (ocultar) next.add(id);
-        else next.delete(id);
-        if (kind === "trend") {
-          const p = trendLineObjectsRef.current[id];
-          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
-        } else if (kind === "arrow") {
-          const p = arrowObjectsRef.current[id];
-          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
-        } else if (kind === "box") {
-          const p = boxObjectsRef.current[id];
-          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
-        } else if (kind === "measure") {
-          const p = measureObjectsRef.current[id];
-          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
-        } else if (kind === "regression") {
-          const p = regressionObjectsRef.current[id];
-          if (p) ocultar ? series.detachPrimitive(p) : series.attachPrimitive(p);
-        } else if (kind === "horizontal") {
-          if (ocultar) {
-            const pl = horizontalLineObjectsRef.current[id];
-            if (pl) series.removePriceLine(pl);
-            delete horizontalLineObjectsRef.current[id];
-          } else if (price !== undefined) {
-            horizontalLineObjectsRef.current[id] = series.createPriceLine({
-              price,
-              color: "#60A5FA",
-              lineWidth: 2,
-              lineStyle: LineStyle.Solid,
-              axisLabelVisible: true,
-              title: "",
-            });
-          }
-        }
-        // "text": no hay primitiva; el <div> se muestra/oculta según
-        // hiddenDrawings al renderizar los cuadros de texto.
-        return next;
-      });
-    },
-    []
-  );
+  // Mostrar/ocultar un dibujo con su ojo del panel Objetos, sin borrarlo.
+  // Solo cambia el estado; el efecto de visibilidad hace el resto (y el
+  // texto se controla al renderizar los cuadros).
+  const toggleDrawingVisible = useCallback((id: string) => {
+    setHiddenDrawings((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // --- Persistencia de dibujos (localStorage, por símbolo) ---
   // Alejo lo reporto: dibujaba (linea, tendencia, regresion), recargaba la
@@ -3337,16 +3324,25 @@ export function CandleChart({
       const saved = JSON.parse(raw) as {
         horizontalLines?: { price: number }[];
         trendLines?: { p1: DrawPoint; p2: DrawPoint }[];
-        arrowLines?: { p1: ScreenPoint; p2: ScreenPoint; color?: string }[];
-        boxShapes?: { p1: ScreenPoint; p2: ScreenPoint; color?: string }[];
+        arrowLines?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
+        boxShapes?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
         measureLines?: { p1: DrawPoint; p2: DrawPoint }[];
         regressionLines?: { fromLogical: number; toLogical: number }[];
         textBoxes?: TextBoxState[];
       };
+      // Flechas/cuadros guardados con el formato viejo (anclados a la
+      // pantalla, sin vela/precio) se descartan — no se pueden ubicar sobre
+      // las velas y quedarían invisibles.
+      const esDelGrafico = (l: { p1?: Partial<DrawPoint>; p2?: Partial<DrawPoint> }) =>
+        typeof l.p1?.logical === "number" && typeof l.p2?.logical === "number";
       saved.horizontalLines?.forEach((l) => addHorizontalLine(l.price));
       saved.trendLines?.forEach((l) => addTrendLine(l.p1, l.p2));
-      saved.arrowLines?.forEach((l) => addArrow(l.p1, l.p2, l.color ?? MARK_GREEN));
-      saved.boxShapes?.forEach((l) => addBox(l.p1, l.p2, l.color ?? MARK_GREEN));
+      saved.arrowLines
+        ?.filter(esDelGrafico)
+        .forEach((l) => addArrow(l.p1, l.p2, l.color ?? MARK_GREEN));
+      saved.boxShapes
+        ?.filter(esDelGrafico)
+        .forEach((l) => addBox(l.p1, l.p2, l.color ?? MARK_GREEN));
       saved.measureLines?.forEach((l) => addMeasure(l.p1, l.p2));
       saved.regressionLines?.forEach((l) => addRegression(l.fromLogical, l.toLogical));
       if (saved.textBoxes?.length) setTextBoxes(saved.textBoxes);
@@ -3899,7 +3895,7 @@ export function CandleChart({
         </div>
       </div>
 
-      <div className={fillHeight ? "flex min-h-0 flex-1 gap-1.5" : "flex gap-1.5"}>
+      <div className={fillHeight ? "flex min-h-0 min-w-0 flex-1 gap-1.5" : "flex min-w-0 gap-1.5"}>
         {/* Barra vertical de dibujo, siempre a la vista sobre el borde
             izquierdo del gráfico (como TradingView) — reemplazó al menú
             desplegable "Dibujar". */}
@@ -3908,7 +3904,17 @@ export function CandleChart({
           onSelect={(t) => setDrawTool((prev) => (prev === t ? "none" : t))}
           palette={palette}
         />
-        <div className={fillHeight ? "relative min-h-0 flex-1" : "relative flex-1"}>
+        {/* `min-w-0` + `overflow-hidden`: sin esto, este hijo flex no se
+            achica por debajo del ancho del canvas del gráfico (min-width:
+            auto), así que al abrir Objetos/Favoritas el gráfico no se
+            encogía y se pintaba ENCIMA de los paneles (bug de Alejo). */}
+        <div
+          className={
+            fillHeight
+              ? "relative min-h-0 min-w-0 flex-1 overflow-hidden"
+              : "relative min-w-0 flex-1 overflow-hidden"
+          }
+        >
           <div
             ref={containerRef}
             className={fillHeight ? "h-full w-full" : "w-full"}
