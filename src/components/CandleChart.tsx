@@ -2001,6 +2001,9 @@ export function CandleChart({
   const [arrowMenu, setArrowMenu] = useState<
     { x: number; y: number; id: string; kind: "arrow" | "box" } | null
   >(null);
+  // Ojo maestro "Dibujos": oculta/muestra TODOS los dibujos de un clic
+  // (como el ojo de dibujos de uCharts), sin borrarlos.
+  const [drawingsHidden, setDrawingsHidden] = useState(false);
 
   // Cerrar el menú de la flecha al hacer clic fuera o con Escape.
   useEffect(() => {
@@ -3140,6 +3143,51 @@ export function CandleChart({
     setBoxShapes((prev) => prev.map((l) => (l.id === id ? { ...l, color } : l)));
   }, []);
 
+  // Ojo maestro "Dibujos": esconde TODOS los dibujos (sin borrarlos) y con
+  // otro clic los vuelve a mostrar. Al mostrar, respeta los que estaban
+  // ocultos uno por uno (hiddenDrawings) y no los reaparece.
+  const toggleAllDrawings = useCallback(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+    setDrawingsHidden((prev) => {
+      const willHide = !prev;
+      const prims = [
+        ...Object.entries(trendLineObjectsRef.current),
+        ...Object.entries(arrowObjectsRef.current),
+        ...Object.entries(boxObjectsRef.current),
+        ...Object.entries(measureObjectsRef.current),
+        ...Object.entries(regressionObjectsRef.current),
+      ];
+      try {
+        if (willHide) {
+          for (const [, p] of prims) series.detachPrimitive(p);
+          for (const pl of Object.values(horizontalLineObjectsRef.current)) {
+            series.removePriceLine(pl);
+          }
+          horizontalLineObjectsRef.current = {};
+        } else {
+          for (const [id, p] of prims) {
+            if (!hiddenDrawings.has(id)) series.attachPrimitive(p);
+          }
+          for (const l of horizontalLines) {
+            if (hiddenDrawings.has(l.id)) continue;
+            horizontalLineObjectsRef.current[l.id] = series.createPriceLine({
+              price: l.price,
+              color: "#60A5FA",
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: "",
+            });
+          }
+        }
+      } catch {
+        // Si algo ya estaba desprendido/attachado, no pasa nada grave.
+      }
+      return willHide;
+    });
+  }, [hiddenDrawings, horizontalLines]);
+
   // Cuántas velas hay entre los dos puntos de la regla — parte de lo que
   // muestra la etiqueta ("0,51 (0,58%) 6 barras", igual que TradingView).
   const addMeasure = useCallback((p1: DrawPoint, p2: DrawPoint) => {
@@ -3761,6 +3809,19 @@ export function CandleChart({
             {ma.label}
           </span>
         ))}
+        {/* Ojo maestro "Dibujos" — oculta/muestra todos los dibujos de un
+            clic, como en uCharts. */}
+        <button
+          type="button"
+          onClick={toggleAllDrawings}
+          className="flex items-center gap-1.5 rounded px-1.5 transition-colors"
+          style={{ color: drawingsHidden ? palette.textSoft : palette.buttonText }}
+          title={drawingsHidden ? "Mostrar todos los dibujos" : "Ocultar todos los dibujos"}
+          aria-pressed={drawingsHidden}
+        >
+          <EyeIcon on={!drawingsHidden} />
+          Dibujos
+        </button>
         {showBollinger && (
           <span className="flex items-center gap-1.5">
             <span
@@ -3932,7 +3993,7 @@ export function CandleChart({
           {textBoxes.map((box) => {
             const pos = textBoxPixels[box.id];
             if (!pos) return null;
-            if (hiddenDrawings.has(box.id)) return null;
+            if (hiddenDrawings.has(box.id) || drawingsHidden) return null;
             return (
               <div
                 key={box.id}
