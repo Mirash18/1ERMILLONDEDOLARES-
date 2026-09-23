@@ -4103,8 +4103,14 @@ export function CandleChart({
   // Sala de Trading: los paneles laterales (Favoritas y Objetos) se abren
   // y cierran cada uno desde su botón del toolbar — no ocupan espacio
   // hasta que alguien los pide, y pueden estar ambos abiertos a la vez.
-  if (!showWatchlist && !showObjectsPanel) return chartPanel;
-
+  //
+  // IMPORTANTE: el envoltorio flex se renderiza SIEMPRE (aunque no haya
+  // paneles abiertos), no solo cuando hay uno. Antes, cuando no había
+  // panel se devolvía `chartPanel` pelado y al abrir uno se envolvía en
+  // este <div>: ese cambio de estructura hacía que React DESMONTARA y
+  // volviera a montar el gráfico, dejando el canvas huérfano — el gráfico
+  // "desaparecía" al abrir Objetos o Favoritas (bug que reportó Alejo).
+  // Con el envoltorio fijo, el gráfico nunca se desmonta.
   return (
     <div className="flex h-full gap-3">
       {chartPanel}
