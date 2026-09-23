@@ -13,7 +13,13 @@ import { getTestimonials } from "@/lib/testimonials";
 // va haciendo día a día" sin pegarle a Redis en cada visita.
 export const revalidate = 60;
 
-const modules = [
+const modules: {
+  tag: string;
+  title: string;
+  status: string;
+  body: string;
+  href?: string;
+}[] = [
   {
     tag: "Clases en vivo",
     title: "Profesor Miguel Cortés",
@@ -22,9 +28,10 @@ const modules = [
   },
   {
     tag: "Herramientas",
-    title: "Calculadora y estudios",
-    status: "Fase 5 — pendiente",
-    body: "Calculadora de velas (Black-Scholes) y estudios técnicos (PM, RSI, volumen).",
+    title: "Calculadora de opciones",
+    status: "Disponible",
+    body: "Precio teórico y las griegas (delta, gamma, vega, theta, rho) con el modelo Black-Scholes.",
+    href: "/calculadora",
   },
 ];
 
@@ -120,23 +127,40 @@ export default async function Home() {
             <div className="h-px flex-1 bg-border" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            {modules.map((m) => (
-              <div
-                key={m.title}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-panel p-5"
-              >
-                <span className="font-sans text-[11px] uppercase tracking-[0.1em] text-gold">
-                  {m.tag}
-                </span>
-                <h3 className="font-display text-lg font-medium text-text">
-                  {m.title}
-                </h3>
-                <p className="text-sm text-text-soft">{m.body}</p>
-                <span className="mt-1 w-fit rounded border border-border bg-input px-2 py-1 font-sans text-[10px] text-text-soft">
-                  {m.status}
-                </span>
-              </div>
-            ))}
+            {modules.map((m) => {
+              const contenido = (
+                <>
+                  <span className="font-sans text-[11px] uppercase tracking-[0.1em] text-gold">
+                    {m.tag}
+                  </span>
+                  <h3 className="font-display text-lg font-medium text-text">
+                    {m.title}
+                  </h3>
+                  <p className="text-sm text-text-soft">{m.body}</p>
+                  <span
+                    className={`mt-1 w-fit rounded border px-2 py-1 font-sans text-[10px] ${
+                      m.href
+                        ? "border-green/40 bg-green/10 text-green"
+                        : "border-border bg-input text-text-soft"
+                    }`}
+                  >
+                    {m.status}
+                  </span>
+                </>
+              );
+              const className =
+                "flex flex-col gap-2 rounded-lg border border-border bg-panel p-5" +
+                (m.href ? " transition-colors hover:border-gold/40" : "");
+              return m.href ? (
+                <Link key={m.title} href={m.href} className={className}>
+                  {contenido}
+                </Link>
+              ) : (
+                <div key={m.title} className={className}>
+                  {contenido}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>

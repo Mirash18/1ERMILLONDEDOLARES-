@@ -27,7 +27,7 @@ const enCamino = [
     nota: "Fase 4",
   },
   {
-    texto: "Calculadora de velas (Black-Scholes) y estudios técnicos",
+    texto: "Estudios técnicos adicionales (RSI y más)",
     nota: "Fase 5",
   },
   {

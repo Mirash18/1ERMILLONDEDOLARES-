@@ -101,8 +101,14 @@ export function TradingRoomHeader() {
             </p>
           </div>
           <Link
-            href="/"
+            href="/calculadora"
             className="border-l border-border/30 pl-6 font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
+          >
+            Calculadora
+          </Link>
+          <Link
+            href="/"
+            className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
           >
             ← volver
           </Link>

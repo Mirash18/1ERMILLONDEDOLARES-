@@ -20,7 +20,10 @@ import { AuthStatus } from "./AuthStatus";
  * por detrás en vez de cortarse con una barra opaca.
  */
 
-const NAV_LINKS = [{ href: "/sala-de-trading", label: "Sala de Trading" }];
+const NAV_LINKS = [
+  { href: "/sala-de-trading", label: "Sala de Trading" },
+  { href: "/calculadora", label: "Calculadora" },
+];
 
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
