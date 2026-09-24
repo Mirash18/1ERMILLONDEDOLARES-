@@ -1438,6 +1438,83 @@ antes de confirmar, sobre todo si la opción recomendada por Vercel no es
 la que hace falta — acá "Recommended" significaba "más seguro por
 defecto", no "lo que este proyecto necesita".
 
+## Pantalla dividida en la Sala de Trading (24 sept. 2026)
+
+Pedido de Alejo, con capturas de ProRealTime como referencia: "Dividir
+verticalmente" para ver **máximo dos gráficos** a la vez — lo plantea como
+la innovación frente a uCharts, que solo deja ver uno. Se aprobó el plan
+antes de construir, con dos decisiones suyas: los dibujos son **por
+acción** (una línea en SPY aparece en cualquier gráfico que muestre SPY), y
+se abre con **clic derecho y además un botón** en la barra del gráfico (a la
+gente ya le costó encontrar cómo cerrar Favoritas).
+
+**Cómo quedó** (`TradingRoom.tsx` + props nuevas de `CandleChart`):
+
+- Clic derecho en una parte vacía del gráfico → "Dividir verticalmente" /
+  "Cerrar este gráfico" (sobre una flecha o cuadro sigue saliendo su menú
+  de color). Lo mismo con el botón ◫ / ⊠ al lado del ☀.
+- Cada gráfico tiene su acción, marco, indicadores y paneles propios. El
+  último que se tocó queda seleccionado (borde dorado) y el encabezado de
+  la sala (precio, cierre de ayer, apertura, volumen) muestra su acción.
+- El gráfico nuevo arranca como copia del actual (igual que ProRealTime).
+- Se recuerda entre visitas (`localStorage["millon:sala:diseno"]`): si
+  estaba dividida, cuál estaba seleccionado y qué acción/marco había en
+  cada lado.
+- Por debajo de 768 px de ancho no se ofrece dividir (se muestra solo el
+  seleccionado): dos gráficos no caben en un celular.
+- `timeScale.lockVisibleTimeRangeOnResize`: al dividir (o abrir
+  Favoritas) se conserva el tramo de tiempo visible y las velas se achican.
+  Sin esto el gráfico conservaba el tamaño de las velas y a la mitad del
+  ancho quedaban 2 velas a la vista.
+
+**Cambio de fondo: los dibujos se guardan por hora, no por índice de
+vela.** Hasta ahora se guardaban con el `logical` de la pantalla (ver
+"Tendencia/Regla: posición lógica en vez de tiempo" más arriba). Eso fallaba
+de dos formas, y la pantalla dividida volvía la primera inevitable:
+
+1. El mismo índice es otra hora en otro marco — SPY 1h y SPY 5m ponían la
+   misma línea en sitios distintos (y ya pasaba al cambiar de marco con un
+   solo gráfico).
+2. El tramo cargado es de N velas fijas: cada día entran nuevas y salen las
+   más viejas, así que todos los índices se corren y los dibujos guardados
+   se iban moviendo solos con los días.
+
+Ahora en pantalla se sigue usando `logical` (así se puede seguir dibujando
+en el espacio en blanco a la derecha — la razón de la decisión del 19
+sept.), pero al **guardar** cada punto se convierte a hora
+(`logicalATiempo`) y al **cargar** de vuelta a índice con las velas que haya
+(`tiempoALogical`, búsqueda binaria; fuera del tramo extrapola con la
+duración de vela del marco, `SEGUNDOS_POR_VELA`). Detalles:
+
+- Si un punto sigue en la misma vela que lo guardado, se conserva la hora
+  guardada exacta: un dibujo hecho en 5m, visto en 1h, cae en la vela de la
+  hora y no debe "redondearse" a ella al guardar.
+- El borde derecho de un cuadro se guarda al FINAL de su vela
+  (`finDeVela`): el cuadro que enmarca la vela de 1h de las 12:00, en 5m,
+  cubre de 12:00 a 12:55 y no una sola velita.
+- Los dibujos se recargan cuando cambia la clave `símbolo|marco|hora de la
+  primera vela|versión` — o sea al cambiar de marco, cuando se corre el
+  tramo, o cuando el otro gráfico guardó cambios (aviso
+  `millon:dibujos` entre los dos, y el evento `storage` entre pestañas). Se
+  conserva el `id` de cada dibujo, así su ojo oculto/visible se mantiene.
+- Guardar no escribe (ni avisa) si el resultado es igual a lo guardado —
+  así la recarga en el otro gráfico no rebota de un lado a otro.
+- Lo guardado antes con el formato viejo (`logical`) se lee tal cual y
+  queda convertido a hora en el primer guardado.
+
+**Bug real encontrado probando**: enganchar un primitivo
+(`series.attachPrimitive`) NO repinta el gráfico — `lightweight-charts`
+solo le entrega `requestUpdate`. Al cargar un dibujo desde el otro gráfico,
+sin que nadie toque este, quedaba invisible hasta pasar el mouse por
+encima. Todos los primitivos piden repintado en `attached()`.
+
+**Ojo al probar en el panel del navegador**: con un tamaño de ventana
+emulado (`resize_window` a medida) el navegador NO entrega
+`requestAnimationFrame`, así que el gráfico no se repinta y las capturas
+llegan atrasadas — parece un bug y no lo es. Para probar la pantalla
+dividida se bajó temporalmente el mínimo de 768 px a 500 px con el tamaño
+normal del panel (y se devolvió).
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

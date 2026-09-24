@@ -220,6 +220,111 @@ function nearestLogical(chart: IChartApi, x: number): number | null {
   return center - x > spacing / 2 ? logical - 1 : logical;
 }
 
+// Íconos de la pantalla dividida: un recuadro partido en dos (dividir) y un
+// recuadro con una × (cerrar este gráfico).
+function IconoDividir() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+      <rect x="1.5" y="2" width="11" height="10" rx="1.2" />
+      <line x1="7" y1="2" x2="7" y2="12" />
+    </svg>
+  );
+}
+
+function IconoCerrarGrafico() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      <rect x="1.5" y="2" width="11" height="10" rx="1.2" />
+      <path d="M5 5l4 4M9 5l-4 4" />
+    </svg>
+  );
+}
+
+// --- Dibujos guardados por FECHA Y HORA, no por número de vela ---
+//
+// En pantalla los dibujos se ubican por índice de vela (`logical`), pero
+// guardarlos así fallaba de dos formas: (1) el mismo índice es otra hora en
+// otro marco — con la pantalla dividida, SPY 1h y SPY 5m ponían la misma
+// línea en sitios distintos — y (2) cada día entran velas nuevas y salen
+// las más viejas del tramo cargado, así que un dibujo guardado se iba
+// corriendo. Se guarda la hora (`t`, Unix segundos) y se convierte al
+// índice de las velas que haya en pantalla al cargarlo.
+
+// Duración de una vela por marco, para ubicar puntos a la derecha de la
+// última vela (el espacio "futuro") o antes de la primera.
+const SEGUNDOS_POR_VELA: Record<string, number> = {
+  "5min": 300,
+  "15min": 900,
+  "30min": 1800,
+  "1h": 3600,
+  "1day": 86400,
+  "1week": 7 * 86400,
+  "1month": 30 * 86400,
+};
+
+type VelaConHora = { time: number };
+
+// Formato guardado en localStorage (`millon:draw:SÍMBOLO`). `t` es la hora;
+// `logical` solo aparece en lo guardado antes del 24 sept. 2026.
+type PuntoGuardado = { t?: number; logical?: number; price: number };
+type DibujosGuardados = {
+  v?: number;
+  horizontalLines?: { id?: string; price: number }[];
+  trendLines?: { id?: string; p1: PuntoGuardado; p2: PuntoGuardado }[];
+  arrowLines?: { id?: string; p1: PuntoGuardado; p2: PuntoGuardado; color?: string }[];
+  boxShapes?: { id?: string; p1: PuntoGuardado; p2: PuntoGuardado; color?: string }[];
+  measureLines?: { id?: string; p1: PuntoGuardado; p2: PuntoGuardado }[];
+  regressionLines?: {
+    id?: string;
+    t1?: number;
+    t2?: number;
+    fromLogical?: number;
+    toLogical?: number;
+  }[];
+  textBoxes?: (Omit<TextBoxState, "logical"> & { logical?: number; t?: number })[];
+};
+
+// Aviso entre los dos gráficos de la pantalla dividida: "guardé dibujos de
+// esta acción" — el otro, si mira la misma acción, recarga los suyos.
+const EVENTO_DIBUJOS = "millon:dibujos";
+
+function logicalATiempo(candles: VelaConHora[], logical: number, paso: number): number {
+  const ultimo = candles.length - 1;
+  const i = Math.round(logical);
+  if (i < 0) return candles[0].time + logical * paso;
+  if (i > ultimo) return candles[ultimo].time + (logical - ultimo) * paso;
+  return candles[i].time + (logical - i) * paso;
+}
+
+// Último segundo de la vela `logical` (un segundo antes de que empiece la
+// siguiente). Para el borde derecho de un cuadro: el cuadro que enmarca la
+// vela de 1h de las 12:00, visto en 5m, debe cubrir hasta las 12:55 — no
+// solo la primera velita de las 12:00.
+function finDeVela(candles: VelaConHora[], logical: number, paso: number): number {
+  const i = Math.round(logical);
+  if (i >= 0 && i < candles.length - 1) return candles[i + 1].time - 1;
+  return logicalATiempo(candles, logical, paso) + paso - 1;
+}
+
+function tiempoALogical(candles: VelaConHora[], t: number, paso: number): number {
+  const ultimo = candles.length - 1;
+  if (t < candles[0].time) return (t - candles[0].time) / paso;
+  if (t > candles[ultimo].time + paso) return ultimo + (t - candles[ultimo].time) / paso;
+  // La última vela que empieza en o antes de `t`.
+  let lo = 0;
+  let hi = ultimo;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (candles[mid].time <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  // Si `t` cae en un hueco (de noche, fin de semana — p. ej. un dibujo del
+  // marco Día, que va a las 00:00, visto en 1h), va a la vela siguiente:
+  // la apertura de ese día, no el cierre del anterior.
+  if (lo < ultimo && t >= candles[lo].time + paso) return lo + 1;
+  return lo;
+}
+
 // Ancho en píxeles de una vela (su "casilla" completa, con el hueco hasta
 // la siguiente), al zoom actual.
 function barSpacingPx(chart: IChartApi): number {
@@ -259,6 +364,11 @@ class TrendLinePrimitive implements ISeriesPrimitive<Time> {
 
   attached(param: { requestUpdate: () => void }): void {
     this.requestUpdate = param.requestUpdate;
+    // Enganchar un primitivo NO repinta el gráfico por sí solo (la librería
+    // solo entrega `requestUpdate`): si se carga desde el otro gráfico de la
+    // pantalla dividida, sin que nadie toque este, quedaba invisible hasta
+    // pasar el mouse por encima.
+    param.requestUpdate();
   }
 
   setPoints(p1: DrawPoint, p2: DrawPoint): void {
@@ -379,6 +489,11 @@ class ArrowPrimitive implements ISeriesPrimitive<Time> {
 
   attached(param: { requestUpdate: () => void }): void {
     this.requestUpdate = param.requestUpdate;
+    // Enganchar un primitivo NO repinta el gráfico por sí solo (la librería
+    // solo entrega `requestUpdate`): si se carga desde el otro gráfico de la
+    // pantalla dividida, sin que nadie toque este, quedaba invisible hasta
+    // pasar el mouse por encima.
+    param.requestUpdate();
   }
 
   setPoints(p1: DrawPoint, p2: DrawPoint): void {
@@ -490,6 +605,11 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
 
   attached(param: { requestUpdate: () => void }): void {
     this.requestUpdate = param.requestUpdate;
+    // Enganchar un primitivo NO repinta el gráfico por sí solo (la librería
+    // solo entrega `requestUpdate`): si se carga desde el otro gráfico de la
+    // pantalla dividida, sin que nadie toque este, quedaba invisible hasta
+    // pasar el mouse por encima.
+    param.requestUpdate();
   }
 
   setPoints(p1: DrawPoint, p2: DrawPoint): void {
@@ -610,6 +730,11 @@ class MeasurePrimitive implements ISeriesPrimitive<Time> {
 
   attached(param: { requestUpdate: () => void }): void {
     this.requestUpdate = param.requestUpdate;
+    // Enganchar un primitivo NO repinta el gráfico por sí solo (la librería
+    // solo entrega `requestUpdate`): si se carga desde el otro gráfico de la
+    // pantalla dividida, sin que nadie toque este, quedaba invisible hasta
+    // pasar el mouse por encima.
+    param.requestUpdate();
   }
 
   setPoints(p1: DrawPoint, p2: DrawPoint, barsBetween: number): void {
@@ -753,6 +878,11 @@ class RegressionChannelPrimitive implements ISeriesPrimitive<Time> {
 
   attached(param: { requestUpdate: () => void }): void {
     this.requestUpdate = param.requestUpdate;
+    // Enganchar un primitivo NO repinta el gráfico por sí solo (la librería
+    // solo entrega `requestUpdate`): si se carga desde el otro gráfico de la
+    // pantalla dividida, sin que nadie toque este, quedaba invisible hasta
+    // pasar el mouse por encima.
+    param.requestUpdate();
   }
 
   setRange(fromLogical: number, toLogical: number): void {
@@ -2082,18 +2212,66 @@ export function CandleChart({
   // Volumen del día (suma de las velas de la última sesión) y la fecha de
   // esa sesión en Nueva York — para la barra de la Sala de Trading.
   onVolumenDelDia,
+  // --- Pantalla dividida (Sala de Trading, ver TradingRoom) ---
+  // Acción y marco con los que arranca (lo recordado de la última visita).
+  initialSymbol = "SPY",
+  initialTimeframe,
+  onTimeframeChange,
+  // Si es el gráfico seleccionado de los dos (borde dorado): el encabezado
+  // de la sala muestra su acción.
+  activo = false,
+  // Cualquier clic dentro de este gráfico lo selecciona.
+  onActivar,
+  // Presentes solo cuando se puede: `onDividir` con un solo gráfico,
+  // `onCerrar` con dos. Aparecen en el menú de clic derecho y en la barra.
+  onDividir,
+  onCerrar,
 }: {
   fillHeight?: boolean;
   onSymbolChange?: (symbol: string) => void;
   onVolumenDelDia?: (v: { fecha: string; volumen: number } | null) => void;
+  initialSymbol?: string;
+  initialTimeframe?: string;
+  onTimeframeChange?: (timeframe: string) => void;
+  activo?: boolean;
+  onActivar?: () => void;
+  onDividir?: () => void;
+  onCerrar?: () => void;
 } = {}) {
-  const [symbol, setSymbol] = useState<string>("SPY");
+  const [symbol, setSymbol] = useState<string>(initialSymbol);
   useEffect(() => {
     onSymbolChange?.(symbol);
   }, [symbol, onSymbolChange]);
   // "Hora" por defecto: es el marco que la comunidad mira día a día — que
   // cada quien tenga que cambiarlo manualmente cada vez no tenía sentido.
-  const [timeframe, setTimeframe] = useState<TimeframeKey>("1h");
+  const [timeframe, setTimeframe] = useState<TimeframeKey>(() =>
+    TIMEFRAMES.some((t) => t.key === initialTimeframe)
+      ? (initialTimeframe as TimeframeKey)
+      : "1h"
+  );
+  useEffect(() => {
+    onTimeframeChange?.(timeframe);
+  }, [timeframe, onTimeframeChange]);
+  // Menú de clic derecho sobre una parte vacía del gráfico (dividir /
+  // cerrar), como el de ProRealTime.
+  const [menuGrafico, setMenuGrafico] = useState<{ x: number; y: number } | null>(null);
+  // El efecto que registra el clic derecho se arma una sola vez: lee por
+  // aquí si hoy hay algo que ofrecer en ese menú.
+  const hayMenuGraficoRef = useRef(false);
+  hayMenuGraficoRef.current = !!(onDividir || onCerrar);
+  useEffect(() => {
+    if (!menuGrafico) return;
+    const cerrar = () => setMenuGrafico(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuGrafico(null);
+    };
+    window.addEventListener("mousedown", cerrar);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", cerrar);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuGrafico]);
   // Universo de símbolos que se puede elegir. Empieza con el gratuito nada
   // más (nunca se asume acceso) y se completa con el pagado (S&P 500 /
   // Nasdaq-100) si `/api/universe` confirma que hay suscripción activa.
@@ -2424,6 +2602,12 @@ export function CandleChart({
         // intradía, igual que en ProRealTime.
         timeVisible: true,
         secondsVisible: false,
+        // Al cambiar de ancho (dividir la pantalla, abrir Favoritas) se
+        // conserva el TRAMO de tiempo que se ve — los dos días con la
+        // apertura al centro — y las velas se achican. Sin esto se
+        // conservaba el tamaño de las velas y, a la mitad del ancho,
+        // quedaban 2 velas a la vista.
+        lockVisibleTimeRangeOnResize: true,
       },
       watermark: {
         visible: true,
@@ -2960,6 +3144,12 @@ export function CandleChart({
           return;
         }
       }
+      // Clic derecho sobre una parte vacía: el menú del gráfico (dividir /
+      // cerrar), en vez del menú del navegador.
+      if (hayMenuGraficoRef.current) {
+        e.preventDefault();
+        setMenuGrafico({ x: pixel.x, y: pixel.y });
+      }
     }
     containerRef.current.addEventListener("contextmenu", onContextMenu);
 
@@ -3002,14 +3192,11 @@ export function CandleChart({
     chartRef.current?.applyOptions({ watermark: { text: symbol } });
   }, [symbol]);
 
-  // Los dibujos (línea horizontal, tendencia, regla, regresión) se hacen a
-  // mano y no se guardan en ningún lado todavía (no hay dónde persistir
-  // dibujos por símbolo) — cambiar de símbolo los borra todos, para no
-  // dejar, por ejemplo, una línea de AAPL a $150 pegada encima de un
-  // gráfico de GLD que se mueve en otro rango de precio por completo.
-  // Fondos por día NO se toca acá: no es un dibujo puntual sino un
-  // interruptor que se mantiene igual sin importar el símbolo.
-  useEffect(() => {
+  // Quita de la PANTALLA todos los dibujos (no los borra de lo guardado).
+  // La usan el cambio de símbolo y la recarga de dibujos (al cambiar de
+  // marco, cuando el tramo de velas se corre, o cuando el otro gráfico de
+  // la pantalla dividida dibujó en la misma acción).
+  const limpiarDibujosEnPantalla = useCallback(() => {
     const series = candleSeriesRef.current;
     if (series) {
       for (const line of Object.values(horizontalLineObjectsRef.current)) {
@@ -3055,11 +3242,6 @@ export function CandleChart({
     setBoxShapes([]);
     setMeasureLines([]);
     setRegressionLines([]);
-    setHiddenDrawings(new Set());
-    // Se cambió de símbolo: marcar "sin hidratar" para que el efecto de
-    // carga vuelva a traer los dibujos guardados del símbolo nuevo cuando
-    // lleguen sus velas (ver persistencia más abajo).
-    hydratedSymbolRef.current = null;
     // Los cuadros de texto no son primitivos de canvas (son <div>, ver
     // TextBoxState), así que no hay nada que desprender de `series` — solo
     // vaciar el estado y sus refs.
@@ -3067,6 +3249,19 @@ export function CandleChart({
     pendingFocusTextBoxIdRef.current = null;
     setTextBoxes([]);
     setTextBoxPixels({});
+  }, []);
+
+  // Cambiar de símbolo quita los dibujos del anterior — para no dejar, por
+  // ejemplo, una línea de AAPL a $150 pegada encima de un gráfico de GLD —
+  // y los del nuevo se cargan de lo guardado cuando lleguen sus velas.
+  // Fondos por día NO se toca acá: no es un dibujo puntual sino un
+  // interruptor que se mantiene igual sin importar el símbolo.
+  useEffect(() => {
+    limpiarDibujosEnPantalla();
+    setHiddenDrawings(new Set());
+    // Marcar "sin hidratar" para que el efecto de carga traiga los dibujos
+    // guardados del símbolo nuevo (ver persistencia más abajo).
+    hydratedKeyRef.current = null;
     dragStartRef.current = null;
     isDraggingRef.current = false;
     // Por si el símbolo cambió a mitad de un arrastre de un tirador (mismo
@@ -3281,18 +3476,25 @@ export function CandleChart({
     }
   }, [showDayBands]);
 
-  // Qué símbolo ya se "hidrató" (se le cargaron los dibujos guardados).
-  // Sirve para dos cosas: no volver a cargar dos veces, y — clave — no
-  // dejar que el efecto de guardado escriba el estado vacío ANTES de haber
-  // cargado lo guardado (si no, al recargar se pisaría con [] lo que había
-  // dibujado el usuario). Ver los dos efectos más abajo.
-  const hydratedSymbolRef = useRef<string | null>(null);
+  // Con qué velas se cargaron los dibujos en pantalla: `símbolo|marco|hora
+  // de la primera vela|versión`. Sirve para tres cosas: no volver a cargar
+  // dos veces; recargarlos cuando cambia el marco o se corre el tramo de
+  // velas (los índices cambian); y — clave — no dejar que el efecto de
+  // guardado escriba ANTES de haber cargado lo guardado (si no, al recargar
+  // se pisaría con [] lo que había dibujado el usuario).
+  const hydratedKeyRef = useRef<string | null>(null);
+  // Se sube para forzar una recarga de dibujos — cuando el otro gráfico de
+  // la pantalla dividida guardó cambios en la misma acción.
+  const [versionDibujos, setVersionDibujos] = useState(0);
+  // Identifica a este gráfico entre los dos de la pantalla dividida, para
+  // no reaccionar a sus propios avisos de "guardé dibujos".
+  const instanciaIdRef = useRef(`${Date.now()}-${Math.random()}`);
 
   // Traza una línea horizontal nueva en `price`.
-  const addHorizontalLine = useCallback((price: number) => {
+  const addHorizontalLine = useCallback((price: number, idGuardado?: string) => {
     const series = candleSeriesRef.current;
     if (!series) return;
-    const id = `${Date.now()}-${Math.random()}`;
+    const id = idGuardado ?? `${Date.now()}-${Math.random()}`;
     const priceLine = series.createPriceLine({
       price,
       color: "#60A5FA",
@@ -3313,11 +3515,11 @@ export function CandleChart({
     setHorizontalLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
-  const addTrendLine = useCallback((p1: DrawPoint, p2: DrawPoint) => {
+  const addTrendLine = useCallback((p1: DrawPoint, p2: DrawPoint, idGuardado?: string) => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return;
-    const id = `${Date.now()}-${Math.random()}`;
+    const id = idGuardado ?? `${Date.now()}-${Math.random()}`;
     const primitive = new TrendLinePrimitive(chart, series, p1, p2);
     series.attachPrimitive(primitive);
     trendLineObjectsRef.current[id] = primitive;
@@ -3333,11 +3535,11 @@ export function CandleChart({
   }, []);
 
   const addArrow = useCallback(
-    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
+    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN, idGuardado?: string) => {
       const chart = chartRef.current;
       const series = candleSeriesRef.current;
       if (!chart || !series) return;
-      const id = `${Date.now()}-${Math.random()}`;
+      const id = idGuardado ?? `${Date.now()}-${Math.random()}`;
       const primitive = new ArrowPrimitive(chart, series, p1, p2, color);
       series.attachPrimitive(primitive);
       arrowObjectsRef.current[id] = primitive;
@@ -3364,11 +3566,11 @@ export function CandleChart({
   }, []);
 
   const addBox = useCallback(
-    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN) => {
+    (p1: DrawPoint, p2: DrawPoint, color: string = MARK_GREEN, idGuardado?: string) => {
       const chart = chartRef.current;
       const series = candleSeriesRef.current;
       if (!chart || !series) return;
-      const id = `${Date.now()}-${Math.random()}`;
+      const id = idGuardado ?? `${Date.now()}-${Math.random()}`;
       const primitive = new BoxPrimitive(chart, series, p1, p2, color);
       series.attachPrimitive(primitive);
       boxObjectsRef.current[id] = primitive;
@@ -3431,12 +3633,12 @@ export function CandleChart({
 
   // Cuántas velas hay entre los dos puntos de la regla — parte de lo que
   // muestra la etiqueta ("0,51 (0,58%) 6 barras", igual que TradingView).
-  const addMeasure = useCallback((p1: DrawPoint, p2: DrawPoint) => {
+  const addMeasure = useCallback((p1: DrawPoint, p2: DrawPoint, idGuardado?: string) => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return;
     const bars = Math.abs(Math.round(p2.logical) - Math.round(p1.logical));
-    const id = `${Date.now()}-${Math.random()}`;
+    const id = idGuardado ?? `${Date.now()}-${Math.random()}`;
     const primitive = new MeasurePrimitive(chart, series, p1, p2, bars);
     series.attachPrimitive(primitive);
     measureObjectsRef.current[id] = primitive;
@@ -3451,13 +3653,13 @@ export function CandleChart({
     setMeasureLines((prev) => prev.filter((l) => l.id !== id));
   }, []);
 
-  const addRegression = useCallback((logical1: number, logical2: number) => {
+  const addRegression = useCallback((logical1: number, logical2: number, idGuardado?: string) => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return;
     const fromLogical = Math.min(logical1, logical2);
     const toLogical = Math.max(logical1, logical2);
-    const id = `${Date.now()}-${Math.random()}`;
+    const id = idGuardado ?? `${Date.now()}-${Math.random()}`;
     const primitive = new RegressionChannelPrimitive(
       chart,
       series,
@@ -3491,78 +3693,233 @@ export function CandleChart({
   }, []);
 
   // --- Persistencia de dibujos (localStorage, por símbolo) ---
-  // Alejo lo reporto: dibujaba (linea, tendencia, regresion), recargaba la
-  // pagina y se borraba todo. Los dibujos vivian solo en memoria. Ahora se
-  // guardan por SIMBOLO en el navegador y se recrean al cargar. Se llavea
-  // por simbolo (no por temporalidad) para calzar con el efecto que ya
-  // limpia los dibujos al cambiar de simbolo; la regla ya estaba bien, se
-  // guarda igual que las demas.
+  // Alejo lo reportó: dibujaba, recargaba la página y se borraba todo. Se
+  // guardan por SÍMBOLO en el navegador y se recrean al cargar. Desde la
+  // pantalla dividida (24 sept. 2026) se guardan por fecha y hora — ver
+  // logicalATiempo/tiempoALogical — así valen en cualquier marco, y los dos
+  // gráficos comparten los dibujos de una misma acción.
   const drawStorageKey = (sym: string) => `millon:draw:${sym}`;
 
-  // GUARDAR: cada vez que cambian los dibujos. Guardado protegido: no
-  // escribe hasta que ESTE simbolo ya se hidrato — si no, el estado vacio
-  // del arranque (o del cambio de simbolo) pisaria lo guardado con [].
+  // Clave de las velas que hay en pantalla (ver hydratedKeyRef). `null`
+  // mientras no sean de ESTE símbolo y ESTE marco — p. ej. recién cambiado
+  // el marco, antes de que lleguen las velas nuevas.
+  const claveVelas =
+    data &&
+    !data.error &&
+    data.candles.length > 0 &&
+    data.symbol === symbol &&
+    dataTimeframeRef.current === timeframe
+      ? `${symbol}|${timeframe}|${data.candles[0].time}|${versionDibujos}`
+      : null;
+
+  // GUARDAR: cada vez que cambian los dibujos. Protegido: no escribe hasta
+  // que los dibujos en pantalla se cargaron con ESTAS velas — si no, el
+  // estado vacío del arranque (o del cambio de símbolo) pisaría lo guardado.
+  // Si lo que hay que guardar es igual a lo guardado, no escribe ni avisa
+  // (así la recarga en el otro gráfico no rebota de un lado a otro).
   useEffect(() => {
-    if (hydratedSymbolRef.current !== symbol) return;
+    if (!claveVelas || !data || hydratedKeyRef.current !== claveVelas) return;
+    const candles = data.candles;
+    const paso = SEGUNDOS_POR_VELA[timeframe] ?? 3600;
+    const clave = drawStorageKey(symbol);
+
+    let previo: DibujosGuardados = {};
     try {
-      localStorage.setItem(
-        drawStorageKey(symbol),
-        JSON.stringify({
-          horizontalLines,
-          trendLines,
-          arrowLines,
-          boxShapes,
-          measureLines,
-          regressionLines,
-          textBoxes,
+      previo = JSON.parse(localStorage.getItem(clave) ?? "{}") as DibujosGuardados;
+    } catch {
+      previo = {};
+    }
+
+    // Se conserva la hora guardada si el punto sigue en la misma vela: puede
+    // venir de un marco más fino (un dibujo hecho en 5m, visto en 1h, cae
+    // en la vela de la hora) y no debe "redondearse" a esa vela al guardar.
+    const hora = (logical: number, tAnterior?: number, alFinal = false) =>
+      tAnterior !== undefined &&
+      Math.abs(tiempoALogical(candles, tAnterior, paso) - logical) < 1e-6
+        ? tAnterior
+        : alFinal
+          ? finDeVela(candles, logical, paso)
+          : logicalATiempo(candles, logical, paso);
+    const previosPar = new Map<string, [PuntoGuardado, PuntoGuardado]>();
+    for (const l of [
+      ...(previo.trendLines ?? []),
+      ...(previo.arrowLines ?? []),
+      ...(previo.boxShapes ?? []),
+      ...(previo.measureLines ?? []),
+    ]) {
+      if (l.id) previosPar.set(l.id, [l.p1, l.p2]);
+    }
+    // `esCuadro`: el punto de la derecha se guarda al FINAL de su vela (ver
+    // finDeVela) — el cuadro cubre velas enteras, la tendencia/flecha no.
+    const par = (id: string, p1: DrawPoint, p2: DrawPoint, esCuadro = false) => {
+      const antes = previosPar.get(id);
+      const p2Derecha = p2.logical >= p1.logical;
+      return {
+        p1: { t: hora(p1.logical, antes?.[0]?.t, esCuadro && !p2Derecha), price: p1.price },
+        p2: { t: hora(p2.logical, antes?.[1]?.t, esCuadro && p2Derecha), price: p2.price },
+      };
+    };
+    const previasReg = new Map(
+      (previo.regressionLines ?? []).map((r) => [r.id, r] as const)
+    );
+    const previosTexto = new Map((previo.textBoxes ?? []).map((b) => [b.id, b.t] as const));
+
+    const guardado: DibujosGuardados = {
+      v: 2,
+      horizontalLines: horizontalLines.map((l) => ({ id: l.id, price: l.price })),
+      trendLines: trendLines.map((l) => ({ id: l.id, ...par(l.id, l.p1, l.p2) })),
+      arrowLines: arrowLines.map((l) => ({ id: l.id, ...par(l.id, l.p1, l.p2), color: l.color })),
+      boxShapes: boxShapes.map((l) => ({ id: l.id, ...par(l.id, l.p1, l.p2, true), color: l.color })),
+      measureLines: measureLines.map((l) => ({ id: l.id, ...par(l.id, l.p1, l.p2) })),
+      regressionLines: regressionLines.map((l) => {
+        const antes = previasReg.get(l.id);
+        return { id: l.id, t1: hora(l.fromLogical, antes?.t1), t2: hora(l.toLogical, antes?.t2) };
+      }),
+      textBoxes: textBoxes.map(({ logical, ...b }) => ({
+        ...b,
+        t: hora(logical, previosTexto.get(b.id)),
+      })),
+    };
+
+    try {
+      const json = JSON.stringify(guardado);
+      if (localStorage.getItem(clave) === json) return;
+      localStorage.setItem(clave, json);
+      // Avisa al otro gráfico de la pantalla dividida (si mira la misma
+      // acción, recarga sus dibujos).
+      window.dispatchEvent(
+        new CustomEvent(EVENTO_DIBUJOS, {
+          detail: { symbol, origen: instanciaIdRef.current },
         })
       );
     } catch {
       // localStorage puede fallar (modo privado, cuota, bloqueado) — no
-      // es critico, los dibujos siguen en pantalla esta sesion.
+      // es crítico, los dibujos siguen en pantalla esta sesión.
     }
-  }, [horizontalLines, trendLines, arrowLines, boxShapes, measureLines, regressionLines, textBoxes, symbol]);
+  }, [
+    horizontalLines,
+    trendLines,
+    arrowLines,
+    boxShapes,
+    measureLines,
+    regressionLines,
+    textBoxes,
+    symbol,
+    timeframe,
+    data,
+    claveVelas,
+  ]);
 
-  // CARGAR: una vez que hay datos del simbolo (velas listas, para que las
-  // coordenadas mapeen bien), recrea los dibujos guardados llamando a las
-  // mismas funciones que usa el usuario. Solo corre cuando el fetch
-  // termino (`!loading`) y aun no se hidrato este simbolo.
+  // CARGAR: cuando hay velas de este símbolo y marco que todavía no tienen
+  // sus dibujos cargados — la primera vez, al cambiar de marco, cuando se
+  // corre el tramo de velas (entran nuevas, salen viejas) o cuando el otro
+  // gráfico guardó cambios. Recrea los dibujos con las mismas funciones que
+  // usa el usuario, conservando su identificador (así su ojo oculto/visible
+  // del panel Objetos se mantiene).
   useEffect(() => {
-    if (loading || !data || data.error || data.candles.length === 0) return;
-    if (hydratedSymbolRef.current === symbol) return;
-    hydratedSymbolRef.current = symbol;
+    if (!claveVelas || !data || hydratedKeyRef.current === claveVelas) return;
+    // A mitad de un arrastre no se recarga (se movería lo que uno tiene
+    // agarrado); se hará con el próximo dato.
+    if (
+      isDraggingRef.current ||
+      editingRef.current ||
+      markDragRef.current ||
+      draggingTextBoxRef.current ||
+      resizingTextBoxRef.current
+    ) {
+      return;
+    }
+    if (hydratedKeyRef.current !== null) limpiarDibujosEnPantalla();
+    hydratedKeyRef.current = claveVelas;
+
+    const candles = data.candles;
+    const paso = SEGUNDOS_POR_VELA[timeframe] ?? 3600;
     try {
       const raw = localStorage.getItem(drawStorageKey(symbol));
       if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        horizontalLines?: { price: number }[];
-        trendLines?: { p1: DrawPoint; p2: DrawPoint }[];
-        arrowLines?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
-        boxShapes?: { p1: DrawPoint; p2: DrawPoint; color?: string }[];
-        measureLines?: { p1: DrawPoint; p2: DrawPoint }[];
-        regressionLines?: { fromLogical: number; toLogical: number }[];
-        textBoxes?: TextBoxState[];
+      const saved = JSON.parse(raw) as DibujosGuardados;
+      // Formato nuevo: hora (`t`). Formato viejo (antes del 24 sept. 2026):
+      // índice de vela (`logical`) — se toma tal cual y al primer guardado
+      // queda convertido a hora. Flechas/cuadros de un formato aún más
+      // viejo (anclados a la pantalla, sin ninguno de los dos) se descartan:
+      // no se pueden ubicar sobre las velas y quedarían invisibles.
+      const aLogical = (t?: number, logical?: number): number | null =>
+        typeof t === "number"
+          ? tiempoALogical(candles, t, paso)
+          : typeof logical === "number"
+            ? logical
+            : null;
+      const aPunto = (p?: PuntoGuardado): DrawPoint | null => {
+        const logical = aLogical(p?.t, p?.logical);
+        return logical === null || !p ? null : { logical, price: p.price };
       };
-      // Flechas/cuadros guardados con el formato viejo (anclados a la
-      // pantalla, sin vela/precio) se descartan — no se pueden ubicar sobre
-      // las velas y quedarían invisibles.
-      const esDelGrafico = (l: { p1?: Partial<DrawPoint>; p2?: Partial<DrawPoint> }) =>
-        typeof l.p1?.logical === "number" && typeof l.p2?.logical === "number";
-      saved.horizontalLines?.forEach((l) => addHorizontalLine(l.price));
-      saved.trendLines?.forEach((l) => addTrendLine(l.p1, l.p2));
-      saved.arrowLines
-        ?.filter(esDelGrafico)
-        .forEach((l) => addArrow(l.p1, l.p2, l.color ?? MARK_GREEN));
-      saved.boxShapes
-        ?.filter(esDelGrafico)
-        .forEach((l) => addBox(l.p1, l.p2, l.color ?? MARK_GREEN));
-      saved.measureLines?.forEach((l) => addMeasure(l.p1, l.p2));
-      saved.regressionLines?.forEach((l) => addRegression(l.fromLogical, l.toLogical));
-      if (saved.textBoxes?.length) setTextBoxes(saved.textBoxes);
+      const conPuntos = <T extends { p1?: PuntoGuardado; p2?: PuntoGuardado }>(
+        l: T,
+        crear: (a: DrawPoint, b: DrawPoint) => void
+      ) => {
+        const a = aPunto(l.p1);
+        const b = aPunto(l.p2);
+        if (a && b) crear(a, b);
+      };
+
+      saved.horizontalLines?.forEach((l) => addHorizontalLine(l.price, l.id));
+      saved.trendLines?.forEach((l) => conPuntos(l, (a, b) => addTrendLine(a, b, l.id)));
+      saved.arrowLines?.forEach((l) =>
+        conPuntos(l, (a, b) => addArrow(a, b, l.color ?? MARK_GREEN, l.id))
+      );
+      saved.boxShapes?.forEach((l) =>
+        conPuntos(l, (a, b) => addBox(a, b, l.color ?? MARK_GREEN, l.id))
+      );
+      saved.measureLines?.forEach((l) => conPuntos(l, (a, b) => addMeasure(a, b, l.id)));
+      saved.regressionLines?.forEach((l) => {
+        const a = aLogical(l.t1, l.fromLogical);
+        const b = aLogical(l.t2, l.toLogical);
+        if (a !== null && b !== null) addRegression(a, b, l.id);
+      });
+      if (saved.textBoxes?.length) {
+        setTextBoxes(
+          saved.textBoxes.flatMap(({ t, logical, ...b }) => {
+            const lg = aLogical(t, logical);
+            return lg === null ? [] : [{ ...b, logical: lg }];
+          })
+        );
+      }
     } catch {
-      // JSON corrupto o API cambiada — se ignora, no se rompe el grafico.
+      // JSON corrupto o API cambiada — se ignora, no se rompe el gráfico.
     }
-  }, [loading, data, symbol, addHorizontalLine, addTrendLine, addArrow, addBox, addMeasure, addRegression]);
+  }, [
+    claveVelas,
+    data,
+    symbol,
+    timeframe,
+    limpiarDibujosEnPantalla,
+    addHorizontalLine,
+    addTrendLine,
+    addArrow,
+    addBox,
+    addMeasure,
+    addRegression,
+  ]);
+
+  // El otro gráfico de la pantalla dividida (o esta misma página abierta en
+  // otra pestaña) guardó dibujos de esta acción: recargar los de aquí.
+  useEffect(() => {
+    const onAviso = (e: Event) => {
+      const d = (e as CustomEvent<{ symbol: string; origen: string }>).detail;
+      if (d?.symbol === symbol && d.origen !== instanciaIdRef.current) {
+        setVersionDibujos((v) => v + 1);
+      }
+    };
+    const onOtraPestana = (e: StorageEvent) => {
+      if (e.key === drawStorageKey(symbol)) setVersionDibujos((v) => v + 1);
+    };
+    window.addEventListener(EVENTO_DIBUJOS, onAviso);
+    window.addEventListener("storage", onOtraPestana);
+    return () => {
+      window.removeEventListener(EVENTO_DIBUJOS, onAviso);
+      window.removeEventListener("storage", onOtraPestana);
+    };
+  }, [symbol]);
 
   // Cuadro de texto — un solo clic lo coloca (como la línea horizontal) con
   // un tamaño y texto por defecto, y queda pendiente de foco (ver el efecto
@@ -3970,7 +4327,9 @@ export function CandleChart({
       }
       style={{
         backgroundColor: palette.wrapperBg,
-        borderColor: palette.wrapperBorder,
+        // Con la pantalla dividida (hay `onCerrar`), el gráfico seleccionado
+        // lleva borde dorado — el encabezado de la sala muestra su acción.
+        borderColor: onCerrar && activo ? "rgba(212,175,55,0.7)" : palette.wrapperBorder,
       }}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -4058,6 +4417,32 @@ export function CandleChart({
           >
             {theme === "dark" ? "☀" : "☾"}
           </button>
+          {/* Dividir / cerrar — lo mismo del menú de clic derecho, a la
+              vista para quien no usa el clic derecho. */}
+          {onDividir && (
+            <button
+              type="button"
+              onClick={onDividir}
+              className="flex items-center rounded px-2.5 py-1.5 transition-colors hover:text-gold"
+              style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
+              title="Dividir verticalmente (ver dos gráficos)"
+              aria-label="Dividir verticalmente"
+            >
+              <IconoDividir />
+            </button>
+          )}
+          {onCerrar && (
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="flex items-center rounded px-2.5 py-1.5 transition-colors hover:text-gold"
+              style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
+              title="Cerrar este gráfico"
+              aria-label="Cerrar este gráfico"
+            >
+              <IconoCerrarGrafico />
+            </button>
+          )}
         </div>
       </div>
 
@@ -4278,6 +4663,47 @@ export function CandleChart({
             </button>
           </div>
         )}
+        {/* Menú de clic derecho sobre una parte vacía del gráfico. */}
+        {menuGrafico && (onDividir || onCerrar) && (
+          <div
+            className="absolute z-40 min-w-[190px] rounded-md border py-1 font-sans text-[12px] shadow-lg"
+            style={{
+              left: menuGrafico.x,
+              top: menuGrafico.y,
+              backgroundColor: palette.buttonBg,
+              borderColor: palette.wrapperBorder,
+              color: palette.buttonText,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {onDividir && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuGrafico(null);
+                  onDividir();
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5"
+              >
+                <IconoDividir />
+                Dividir verticalmente
+              </button>
+            )}
+            {onCerrar && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuGrafico(null);
+                  onCerrar();
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5"
+              >
+                <IconoCerrarGrafico />
+                Cerrar este gráfico
+              </button>
+            )}
+          </div>
+        )}
         {/* Capa de cuadros de texto — hermana de containerRef, no hija: así
             un clic sobre un cuadro nunca pasa por el mousedown nativo del
             gráfico (que vive sobre containerRef), y no hace falta pelear
@@ -4407,7 +4833,11 @@ export function CandleChart({
   // "desaparecía" al abrir Objetos o Favoritas (bug que reportó Alejo).
   // Con el envoltorio fijo, el gráfico nunca se desmonta.
   return (
-    <div className="flex h-full gap-3">
+    // `min-w-0 flex-1`: con la pantalla dividida, cada gráfico toma la mitad
+    // y puede encogerse (si no, el canvas lo empuja más allá de su mitad).
+    // Cualquier clic dentro (velas, barra, dibujos, Favoritas, Objetos) lo
+    // selecciona — en captura, para que cuente aunque el clic haga otra cosa.
+    <div className="flex h-full min-w-0 flex-1 gap-3" onMouseDownCapture={onActivar}>
       {chartPanel}
       {showObjectsPanel && (
         <ObjectsPanel
