@@ -971,6 +971,60 @@ function nextCandleBoundary(nowSeconds: number, timeframe: TimeframeKey): number
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000);
 }
 
+// Encuadre por defecto del eje de tiempo — lo que se ve al abrir el gráfico
+// y a donde lleva la flechita de "ir al precio actual".
+function encuadrarVista(
+  chart: IChartApi,
+  candles: CandleSeries["candles"],
+  intraday: boolean
+): void {
+  if (candles.length === 0) return;
+  const ultima = candles[candles.length - 1];
+
+  if (intraday) {
+    // Los marcos intradía arrancan centrados en lo reciente — pero no SOLO
+    // en el día en curso: con el mercado recién abierto eso eran apenas
+    // 6-7 velas, demasiado apretado (Alejo pidió alejar el zoom para ver
+    // más contexto). Se muestran los últimos 3 días hábiles completos (de
+    // los que haya cargados) en vez de uno solo — bastantes más velas, sin
+    // llegar a las 300 que se piden de fondo para las PM.
+    const DIAS_VISIBLES_HORA = 3;
+    const diasUnicos = Array.from(
+      new Set(candles.map((c) => Math.floor(c.time / 86400)))
+    ).sort((a, b) => a - b);
+    const diaDesde = diasUnicos[Math.max(0, diasUnicos.length - DIAS_VISIBLES_HORA)];
+    const primeraVisible = candles.find((c) => Math.floor(c.time / 86400) >= diaDesde);
+
+    chart.timeScale().setVisibleRange({
+      from: (primeraVisible ?? ultima).time as unknown as UTCTimestamp,
+      to: (ultima.time + 3600) as unknown as UTCTimestamp,
+    });
+    return;
+  }
+
+  // En Día/Semana/Mes se pide de fondo bastante historia (para que las
+  // PM de 100 y 200 períodos tengan con qué calcularse), pero a nadie
+  // le sirve abrir viendo esa historia entera apretada — hay que
+  // arrastrarse hasta la derecha para llegar al precio de hoy. Alejo lo
+  // pidió explícitamente pensando en gente mayor a la que le cuesta
+  // desplazarse: en vez de `fitContent()` (que muestra el 100% de lo
+  // cargado), se muestra solo la mitad más reciente — así ya arranca
+  // centrado en el valor actual, con las velas al doble de grandes.
+  if (candles.length > 1) {
+    const mitad = Math.floor(candles.length / 2);
+    const desde = candles[mitad].time;
+    // Un margen a la derecha (5% del tramo mostrado) para que la
+    // última vela no quede pegada al borde del panel.
+    const margen = Math.round((ultima.time - desde) * 0.05);
+    chart.timeScale().setVisibleRange({
+      from: desde as unknown as UTCTimestamp,
+      to: (ultima.time + margen) as unknown as UTCTimestamp,
+    });
+  } else {
+    chart.timeScale().fitContent();
+  }
+}
+
 const NY_APERTURA = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/New_York",
   weekday: "short",
@@ -2034,6 +2088,10 @@ export function CandleChart({
   // En qué altura (px) del panel cae el último precio — la insignia de
   // "próxima vela" se posiciona con esto para quedar pegada al precio.
   const [priceY, setPriceY] = useState<number | null>(null);
+  // El precio actual (o la última vela) quedó fuera de la vista — por zoom,
+  // por arrastrar el eje de precio o por irse al histórico. Muestra la
+  // flechita para volver de un clic.
+  const [lejosDelPrecio, setLejosDelPrecio] = useState(false);
   // Último precio fuera de sesión — hacia dónde viene abriendo el mercado.
   const [extended, setExtended] = useState<ExtendedQuote | null>(null);
   // Próximo earning estimado del símbolo actual (ver src/lib/earnings.ts).
@@ -2237,6 +2295,9 @@ export function CandleChart({
   // dinámico en la Sala de Trading (`fillHeight`). `clampBadgeTop` lo usa
   // para no dejar salir la insignia del panel real, sea cual sea su alto.
   const chartHeightRef = useRef(CHART_HEIGHT);
+  // `símbolo|marco` que ya se encuadró — para reactivar el autoscale del
+  // precio solo al cambiar de acción o de marco (ver el efecto que pinta).
+  const vistaEncuadradaRef = useRef("");
 
   // Recalcula en qué altura cae el último precio en el panel — se llama
   // cuando llegan datos nuevos, al cambiar el tamaño del gráfico y al hacer
@@ -2247,7 +2308,17 @@ export function CandleChart({
     const series = candleSeriesRef.current;
     if (candles && candles.length > 0 && series) {
       const lastClose = candles[candles.length - 1].close;
-      setPriceY(series.priceToCoordinate(lastClose));
+      const y = series.priceToCoordinate(lastClose);
+      setPriceY(y);
+
+      // ¿Se ve el precio actual? Fuera de vista si su altura cae por fuera
+      // del panel (menos el eje de fechas, ~30 px) o si la última vela
+      // quedó a la derecha del tramo visible (uno se fue al histórico).
+      const rango = chartRef.current?.timeScale().getVisibleLogicalRange();
+      const ultimaIdx = candles.length - 1;
+      const precioFuera = y === null || y < 0 || y > chartHeightRef.current - 30;
+      const velaFuera = !!rango && (ultimaIdx > rango.to + 0.5 || ultimaIdx < rango.from);
+      setLejosDelPrecio(precioFuera || velaFuera);
     }
 
     // Misma idea para los cuadros de texto: su posición en pantalla depende
@@ -2408,6 +2479,12 @@ export function CandleChart({
     // cambiar la escala de precio (autoscale) — se recalcula ahí también
     // para que la insignia se mantenga pegada al precio.
     chart.timeScale().subscribeVisibleLogicalRangeChange(updatePriceY);
+    // Arrastrar el eje de precio o hacer zoom vertical no mueve el eje de
+    // tiempo, así que el aviso de arriba no se entera: se recalcula al
+    // soltar el mouse y con la rueda (un frame después, ya aplicado).
+    const recalcularPrecio = () => requestAnimationFrame(updatePriceY);
+    window.addEventListener("mouseup", recalcularPrecio);
+    containerRef.current.addEventListener("wheel", recalcularPrecio, { passive: true });
 
     // Modo dibujo — libre de verdad: clic, arrastrar, soltar, viendo la
     // línea seguir el cursor todo el tiempo (como cualquier herramienta de
@@ -2856,6 +2933,8 @@ export function CandleChart({
 
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
+      window.removeEventListener("mouseup", recalcularPrecio);
+      containerRef.current?.removeEventListener("wheel", recalcularPrecio);
       chart.unsubscribeCrosshairMove(onCrosshairMove);
       containerRef.current?.removeEventListener("mousedown", onMouseDown, true);
       containerRef.current?.removeEventListener("contextmenu", onContextMenu);
@@ -3719,57 +3798,44 @@ export function CandleChart({
           text: invertScale ? undefined : "apertura",
         },
       ]);
-
-      // Los marcos intradía arrancan centrados en lo reciente — pero no SOLO
-      // en el día en curso: con el mercado recién abierto eso eran apenas
-      // 6-7 velas, demasiado apretado (Alejo pidió alejar el zoom para ver
-      // más contexto). Se muestran los últimos 3 días hábiles completos (de
-      // los que haya cargados) en vez de uno solo — bastantes más velas, sin
-      // llegar a las 300 que se piden de fondo para las PM.
-      const DIAS_VISIBLES_HORA = 3;
-      const diasUnicos = Array.from(
-        new Set(data.candles.map((c) => Math.floor(c.time / 86400)))
-      ).sort((a, b) => a - b);
-      const diaDesde = diasUnicos[Math.max(0, diasUnicos.length - DIAS_VISIBLES_HORA)];
-      const primeraVisible = data.candles.find(
-        (c) => Math.floor(c.time / 86400) >= diaDesde
-      );
-
-      chartRef.current?.timeScale().setVisibleRange({
-        from: (primeraVisible ?? apertura).time as unknown as UTCTimestamp,
-        to: (ultima.time + 3600) as unknown as UTCTimestamp,
-      });
     } else {
       candleSeriesRef.current.setMarkers([]);
+    }
 
-      // En Día/Semana/Mes se pide de fondo bastante historia (para que las
-      // PM de 100 y 200 períodos tengan con qué calcularse), pero a nadie
-      // le sirve abrir viendo esa historia entera apretada — hay que
-      // arrastrarse hasta la derecha para llegar al precio de hoy. Alejo lo
-      // pidió explícitamente pensando en gente mayor a la que le cuesta
-      // desplazarse: en vez de `fitContent()` (que muestra el 100% de lo
-      // cargado), se muestra solo la mitad más reciente — así ya arranca
-      // centrado en el valor actual, con las velas al doble de grandes.
-      if (data.candles.length > 1) {
-        const mitad = Math.floor(data.candles.length / 2);
-        const desde = data.candles[mitad].time;
-        const ultima = data.candles[data.candles.length - 1].time;
-        // Un margen a la derecha (5% del tramo mostrado) para que la
-        // última vela no quede pegada al borde del panel.
-        const margen = Math.round((ultima - desde) * 0.05);
-        chartRef.current?.timeScale().setVisibleRange({
-          from: desde as unknown as UTCTimestamp,
-          to: (ultima + margen) as unknown as UTCTimestamp,
-        });
-      } else {
-        chartRef.current?.timeScale().fitContent();
-      }
+    // Al cambiar de acción o de marco, la escala de precio vuelve a ser
+    // automática. Si antes se había arrastrado el eje de precio (o hecho
+    // zoom vertical), lightweight-charts apaga el autoscale y no lo vuelve
+    // a prender nunca: al pasar de SPY (~$780) a Netflix la escala seguía
+    // en los precios de SPY y había que bajar a buscar las velas (bug de
+    // Alejo). Los refrescos de fondo del mismo símbolo no la tocan, para no
+    // deshacerle a nadie el zoom vertical que armó a propósito.
+    const vista = `${data.symbol}|${timeframe}`;
+    if (vistaEncuadradaRef.current !== vista) {
+      vistaEncuadradaRef.current = vista;
+      candleSeriesRef.current.priceScale().applyOptions({ autoScale: true });
+    }
+
+    if (chartRef.current) {
+      encuadrarVista(chartRef.current, data.candles, INTRADAY_TIMEFRAMES.has(timeframe));
     }
 
     // Un frame después, para que el autoscale del precio ya haya aplicado
     // antes de calcular dónde cae el último precio en el panel.
     requestAnimationFrame(updatePriceY);
   }, [data, timeframe, invertScale, updatePriceY]);
+
+  // Flechita "Precio actual": escala de precio automática de nuevo y el
+  // mismo encuadre con el que abre el gráfico (lo reciente, con la vela en
+  // curso a la vista).
+  const irAlPrecioActual = useCallback(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    const candles = dataRef.current?.candles;
+    if (!chart || !series || !candles) return;
+    series.priceScale().applyOptions({ autoScale: true });
+    encuadrarVista(chart, candles, INTRADAY_TIMEFRAMES.has(timeframe));
+    requestAnimationFrame(updatePriceY);
+  }, [timeframe, updatePriceY]);
 
   const secondsToNextCandle =
     nowSeconds === null ? null : nextCandleBoundary(nowSeconds, timeframe) - nowSeconds;
@@ -4031,6 +4097,26 @@ export function CandleChart({
           Próxima vela en{" "}
           {secondsToNextCandle === null ? "—:—" : formatCountdown(secondsToNextCandle)}
         </div>
+        {/* Aparece solo cuando el precio actual quedó fuera de la vista —
+            un clic y el gráfico vuelve a la vela en curso y a su precio. */}
+        {lejosDelPrecio && data && data.candles.length > 0 && (
+          <button
+            type="button"
+            onClick={irAlPrecioActual}
+            title="Volver al precio actual"
+            className="absolute bottom-10 right-[84px] z-30 flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-sans text-[11px] font-medium shadow-lg transition-colors hover:border-gold hover:text-gold"
+            style={{
+              backgroundColor: palette.buttonBg,
+              borderColor: palette.wrapperBorder,
+              color: palette.buttonText,
+            }}
+          >
+            Precio actual
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2.5 2.5 6 6l-3.5 3.5M6.5 2.5 10 6l-3.5 3.5" />
+            </svg>
+          </button>
+        )}
         {/* Menú de clic derecho sobre una flecha: color verde/rojo o borrar.
             `stopPropagation` en mousedown para que el cierre "al hacer clic
             fuera" no lo cierre antes de que corra el onClick del botón. */}
