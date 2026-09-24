@@ -11,11 +11,14 @@
  */
 
 import { getRedisClient } from "./marketCache";
+import { isTestimonialSource, type TestimonialSource } from "./testimonialSources";
 
 const KEY = "testimonials:list";
 // Tope de cuántos se guardan — una vitrina, no un archivo histórico
 // completo. Los más viejos se van cayendo solos al llegar nuevos.
 const MAX_TESTIMONIALS = 60;
+
+export { isTestimonialSource, type TestimonialSource };
 
 export type Testimonial = {
   id: string;
@@ -24,6 +27,10 @@ export type Testimonial = {
   mediaUrl: string;
   mediaType: "image" | "video";
   createdAt: number;
+  // Opcional: los subidos antes del 24 sept. 2026 no lo tienen (se muestran
+  // sin ícono hasta que se les asigne desde /admin/testimonios — no se
+  // adivina de dónde vinieron).
+  source?: TestimonialSource;
 };
 
 export async function getTestimonials(): Promise<Testimonial[]> {
@@ -54,6 +61,30 @@ export async function addTestimonial(
     const next = [testimonial, ...current].slice(0, MAX_TESTIMONIALS);
     await redis.set(KEY, next);
     return testimonial;
+  } catch {
+    return null;
+  }
+}
+
+/** Cambia de dónde viene un testimonio ya subido. `null` si no existe o
+ * no se pudo guardar. */
+export async function setTestimonialSource(
+  id: string,
+  source: TestimonialSource
+): Promise<Testimonial | null> {
+  const redis = getRedisClient();
+  if (!redis) return null;
+
+  try {
+    const current = await getTestimonials();
+    const found = current.find((t) => t.id === id);
+    if (!found) return null;
+    const updated = { ...found, source };
+    await redis.set(
+      KEY,
+      current.map((t) => (t.id === id ? updated : t))
+    );
+    return updated;
   } catch {
     return null;
   }

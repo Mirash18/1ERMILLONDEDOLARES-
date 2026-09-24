@@ -2,55 +2,27 @@
 
 import { useEffect, useState } from "react";
 import type { Testimonial } from "@/lib/testimonials";
+import { CarruselHorizontal } from "./CarruselHorizontal";
+import { TestimonialSourceIcon } from "./TestimonialSourceIcon";
 
 /**
  * Las tarjetas de testimonios y la vista ampliada al hacer clic.
  *
- * Antes esto era un carrusel de dos filas desplazándose solas en
- * direcciones opuestas. Alejo lo vio con pocos testimonios y pidió
- * cambiarlo: "va como un ciclo, como un ciclo, y queda feo" — con dos
- * o tres testimonios la lista se duplica para que el bucle no se note,
- * y se termina viendo la misma tarjeta dos veces seguidas. Ahora es
- * una cuadrícula centrada que crece hacia abajo, sin movimiento.
+ * Historia: primero fue un carrusel de dos filas moviéndose solas — Alejo
+ * lo descartó ("va como un ciclo y queda feo": con pocos testimonios se
+ * veía la misma tarjeta repetida). Después, una cuadrícula que crecía
+ * hacia abajo; con más testimonios la página se volvía enorme. Ahora
+ * (24 sept. 2026, pedido suyo): UNA fila, el último subido primero, y
+ * flechas ← → para pasar — sin movimiento automático.
  *
- * De paso pesa menos: se acabó la animación que corría sin parar y ya
- * no se duplican las tarjetas en el HTML.
+ * Cada tarjeta muestra el ícono de dónde vino (WhatsApp / Instagram /
+ * Facebook), elegido al subirla. Los viejos sin origen, sin ícono.
  *
  * Las imágenes van con `object-contain` y no `object-cover`: recortar
  * para que todas midan igual dejaba los testimonios "incompletos"
  * (también reportado por Alejo). Así se ve la imagen entera, y el que
  * quiera verla en grande le da clic.
  */
-// Glifo estilo cámara con el degradado característico de Instagram — evoca
-// la red social (los testimonios vienen de ahí) SIN usar el logo ni el
-// nombre de marca real, que son marca registrada.
-function SocialGlyph() {
-  return (
-    <span
-      aria-hidden
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
-      style={{
-        background:
-          "linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)",
-      }}
-    >
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="white"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="3" y="3" width="18" height="18" rx="5" />
-        <circle cx="12" cy="12" r="4" />
-        <circle cx="17.5" cy="6.5" r="1" fill="white" stroke="none" />
-      </svg>
-    </span>
-  );
-}
 
 const HASHTAG = "#PrimerMillónDeDólares";
 
@@ -75,14 +47,15 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
 
   return (
     <>
-      <div className="mx-auto flex max-w-5xl flex-wrap justify-center gap-5 px-6">
+      <div className="mx-auto max-w-5xl px-6">
+        <CarruselHorizontal tono="claro">
         {items.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setAmpliado(t)}
             aria-label={`Ampliar el testimonio de ${t.name}`}
-            className="flex w-full max-w-[280px] flex-col overflow-hidden rounded-lg border border-[#e4e0d4] bg-[#fbfaf6] text-left shadow-sm transition-transform hover:-translate-y-0.5 sm:w-[280px]"
+            className="flex h-full w-[260px] flex-col overflow-hidden rounded-lg border border-[#e4e0d4] bg-[#fbfaf6] text-left shadow-sm transition-transform hover:-translate-y-0.5 sm:w-[280px]"
           >
             <div className="flex h-44 w-full items-center justify-center bg-[#11161c]">
               {t.mediaType === "video" ? (
@@ -107,7 +80,7 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
             <div className="flex flex-1 flex-col gap-2.5 p-4">
               {/* Encabezado estilo red social: glifo + nombre del alumno. */}
               <div className="flex items-center gap-2">
-                <SocialGlyph />
+                {t.source && <TestimonialSourceIcon source={t.source} />}
                 <span className="flex-1 truncate font-sans text-[13px] font-semibold text-[#2a2a24]">
                   {t.name}
                 </span>
@@ -121,6 +94,7 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
             </div>
           </button>
         ))}
+        </CarruselHorizontal>
       </div>
 
       {ampliado && (
@@ -161,7 +135,7 @@ export function TestimonialsGrid({ items }: { items: Testimonial[] }) {
 
           <div className="flex max-w-xl flex-col items-center gap-1 text-center">
             <div className="flex items-center gap-2">
-              <SocialGlyph />
+              {ampliado.source && <TestimonialSourceIcon source={ampliado.source} />}
               <span className="font-sans text-sm font-semibold text-white">
                 {ampliado.name}
               </span>

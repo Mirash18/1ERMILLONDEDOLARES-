@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { isAdmin } from "@/lib/admin";
-import { addTestimonial } from "@/lib/testimonials";
+import { addTestimonial, isTestimonialSource } from "@/lib/testimonials";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB
 const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // 60 MB
@@ -65,13 +65,16 @@ export async function POST(request: Request): Promise<NextResponse> {
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
         try {
-          const { name, text } = JSON.parse(tokenPayload ?? "{}");
+          const { name, text, source } = JSON.parse(tokenPayload ?? "{}");
           if (!name || !text) return;
           await addTestimonial({
             name,
             text,
             mediaUrl: blob.url,
             mediaType: blob.contentType.startsWith("video/") ? "video" : "image",
+            // Solo si es uno de los tres conocidos (el payload viene del
+            // navegador — no se guarda cualquier cosa que llegue).
+            ...(isTestimonialSource(source) ? { source } : {}),
           });
         } catch {
           // Si esto falla, el archivo queda subido pero sin testimonio
