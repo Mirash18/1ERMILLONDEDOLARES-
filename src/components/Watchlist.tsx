@@ -16,6 +16,26 @@ type OrdenColumna = "symbol" | "price";
 // (ver FREE_SYMBOLS / SECTORS en universe.ts), si no, no cargarían precio.
 const DEFAULT_WATCHLIST = ["SPY", "QQQ", "MU", "META", "AMD", "GLD", "TSLA"];
 
+// Minimizar el panel — la rayita de las ventanas. La gente no se daba
+// cuenta de que se cerraba volviendo a tocar el botón "Favoritas" del
+// toolbar (lo pidió Alejo).
+function BotonMinimizar({ palette, onClose }: { palette: Palette; onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      className="flex h-6 w-6 items-center justify-center rounded"
+      style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
+      title="Minimizar favoritas"
+      aria-label="Minimizar favoritas"
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        <line x1="1.5" y1="5" x2="8.5" y2="5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
 /**
  * Lista de seguimiento (watchlist) de la Sala de Trading — como el panel
  * "Populares" de ProRealTime, con un buscador por categorías como el
@@ -29,10 +49,12 @@ export function Watchlist({
   symbol,
   onSelect,
   palette,
+  onClose,
 }: {
   symbol: string;
   onSelect: (s: string) => void;
   palette: Palette;
+  onClose: () => void;
 }) {
   // `null` mientras se confirma con el servidor si hay cuenta — así no se
   // le muestra por un instante el aviso de "crea una cuenta" a alguien que
@@ -185,9 +207,12 @@ export function Watchlist({
     if (status === "sin-cuenta") {
       return (
         <div
-          className="flex w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-lg border p-6 text-center"
+          className="relative flex w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-lg border p-6 text-center"
           style={{ backgroundColor: palette.wrapperBg, borderColor: palette.wrapperBorder }}
         >
+          <div className="absolute right-3 top-3">
+            <BotonMinimizar palette={palette} onClose={onClose} />
+          </div>
           <p className="font-mono text-[11px] leading-relaxed" style={{ color: palette.textSoft }}>
             Crea una cuenta gratis para armar tu lista de seguimiento con
             cualquier acción del S&P 500 y el Nasdaq.
@@ -217,9 +242,12 @@ export function Watchlist({
 
     return (
       <div
-        className="flex w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-lg border p-6 text-center"
+        className="relative flex w-72 shrink-0 flex-col items-center justify-center gap-3 rounded-lg border p-6 text-center"
         style={{ backgroundColor: palette.wrapperBg, borderColor: palette.wrapperBorder }}
       >
+        <div className="absolute right-3 top-3">
+          <BotonMinimizar palette={palette} onClose={onClose} />
+        </div>
         <p className="font-mono text-[11px] leading-relaxed" style={{ color: palette.textSoft }}>
           Todavía no tienes acceso a la Sala de Trading. Esta sección se
           habilita a mano, uno por uno — escríbenos y te damos acceso.
@@ -253,16 +281,19 @@ export function Watchlist({
         >
           Favoritas
         </span>
-        <button
-          type="button"
-          onClick={() => setModalOpen(true)}
-          className="flex h-6 w-6 items-center justify-center rounded font-mono text-sm"
-          style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
-          title="Agregar símbolo"
-          aria-label="Agregar símbolo"
-        >
-          +
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="flex h-6 w-6 items-center justify-center rounded font-mono text-sm"
+            style={{ backgroundColor: palette.buttonBg, color: palette.buttonText }}
+            title="Agregar símbolo"
+            aria-label="Agregar símbolo"
+          >
+            +
+          </button>
+          <BotonMinimizar palette={palette} onClose={onClose} />
+        </div>
       </div>
 
       {favorites.length > 0 && (

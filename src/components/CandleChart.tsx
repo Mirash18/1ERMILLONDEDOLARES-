@@ -4387,7 +4387,12 @@ export function CandleChart({
         />
       )}
       {showWatchlist && (
-        <Watchlist symbol={symbol} onSelect={setSymbol} palette={palette} />
+        <Watchlist
+          symbol={symbol}
+          onSelect={setSymbol}
+          palette={palette}
+          onClose={() => setShowWatchlist(false)}
+        />
       )}
     </div>
   );
