@@ -18,9 +18,18 @@ import type { Quote } from "@/lib/marketData";
 export function TradingRoom() {
   const [symbol, setSymbol] = useState("SPY");
   const [quote, setQuote] = useState<Quote | null>(null);
+  // El volumen sale de las velas del gráfico, no de la cotización (ver el
+  // comentario en Quote, marketData.ts).
+  const [volumenDia, setVolumenDia] = useState<{ fecha: string; volumen: number } | null>(
+    null
+  );
 
-  // Referencia estable: el gráfico la usa en un efecto.
+  // Referencias estables: el gráfico las usa en efectos.
   const onSymbolChange = useCallback((s: string) => setSymbol(s), []);
+  const onVolumenDelDia = useCallback(
+    (v: { fecha: string; volumen: number } | null) => setVolumenDia(v),
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -52,9 +61,13 @@ export function TradingRoom() {
   return (
     <div className="flex h-screen flex-col bg-bg">
       <TradingRoomHeader symbol={symbol} quote={quote} />
-      <TradingInfoBar quote={quote} />
+      <TradingInfoBar quote={quote} volumenDia={volumenDia} />
       <main className="min-h-0 flex-1 overflow-hidden px-3 py-3">
-        <CandleChart fillHeight onSymbolChange={onSymbolChange} />
+        <CandleChart
+          fillHeight
+          onSymbolChange={onSymbolChange}
+          onVolumenDelDia={onVolumenDelDia}
+        />
       </main>
     </div>
   );

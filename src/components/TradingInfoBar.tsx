@@ -2,7 +2,7 @@ import type { Quote } from "@/lib/marketData";
 
 /**
  * Barra de datos de la Sala de Trading, de la acción elegida en el gráfico:
- * volumen del día, cierre de ayer y apertura de hoy — la apertura en verde
+ * volumen de ayer, cierre de ayer y apertura de hoy — la apertura en verde
  * o rojo según abrió por encima o por debajo del cierre, con la diferencia.
  * Alejo pidió cambiar el "Rango diario" por estos dos datos.
  *
@@ -26,7 +26,15 @@ function formatearVolumen(v: number): string {
   return String(Math.round(v));
 }
 
-export function TradingInfoBar({ quote }: { quote: Quote | null }) {
+export function TradingInfoBar({
+  quote,
+  volumenDia,
+}: {
+  quote: Quote | null;
+  // Suma de las velas de la última sesión en el gráfico (el volumen de la
+  // cotización de Twelve Data es de un solo mercado y sale muy bajo).
+  volumenDia: { fecha: string; volumen: number } | null;
+}) {
   // La cotización es de la sesión de HOY solo desde la apertura. Antes (pre-
   // mercado, o fin de semana) Twelve Data sigue entregando la sesión
   // anterior: ahí el "cierre de ayer" es su último precio, y la apertura de
@@ -34,7 +42,9 @@ export function TradingInfoBar({ quote }: { quote: Quote | null }) {
   const sesionDeHoy = !!quote?.sessionDate && quote.sessionDate === hoyNuevaYork();
   const cierreAyer = sesionDeHoy ? quote?.previousClose ?? null : quote?.price ?? null;
   const aperturaHoy = sesionDeHoy ? quote?.open ?? null : null;
-  const volumen = sesionDeHoy ? quote?.volume ?? null : null;
+  // Volumen de la última sesión completa (ver CandleChart: el de la sesión
+  // en curso llega incompleto de Twelve Data).
+  const volumen = volumenDia?.volumen ?? null;
 
   const gap =
     aperturaHoy !== null && cierreAyer !== null ? aperturaHoy - cierreAyer : null;
@@ -45,7 +55,9 @@ export function TradingInfoBar({ quote }: { quote: Quote | null }) {
     <div className="shrink-0 border-b border-border bg-[#0b0e14]/50 backdrop-blur-sm">
       <div className="mx-auto max-w-[1600px] px-6 py-3">
         <div className="flex flex-wrap gap-x-12 gap-y-2">
-          <Dato titulo="Volumen">{volumen === null ? "—" : formatearVolumen(volumen)}</Dato>
+          <Dato titulo="Volumen ayer">
+            {volumen === null ? "—" : formatearVolumen(volumen)}
+          </Dato>
 
           <Dato titulo="Cierre ayer">
             {cierreAyer === null ? "—" : `$${cierreAyer.toFixed(2)}`}

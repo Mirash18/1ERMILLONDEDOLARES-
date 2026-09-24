@@ -22,9 +22,11 @@ export type Quote = {
   // Para la barra de la Sala de Trading. Opcionales porque las cotizaciones
   // guardadas en Redis antes de agregarlos no los traen (se tratan como
   // "sin dato" hasta el siguiente refresco).
+  // (El volumen de la cotización NO se usa: Twelve Data lo da de un solo
+  // mercado, no el consolidado — a las 10:25 decía 265 mil para SPY. El
+  // volumen del día sale de las velas del gráfico.)
   open?: number | null;
   previousClose?: number | null;
-  volume?: number | null;
   // Día de la sesión a la que corresponde la cotización (AAAA-MM-DD). Antes
   // de la apertura sigue siendo el día hábil anterior — así se sabe si la
   // "apertura" es la de hoy o la de ayer.
@@ -159,7 +161,6 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
                 : null,
             open: numeroONull(entry.open),
             previousClose: numeroONull(entry.previous_close),
-            volume: numeroONull(entry.volume),
             sessionDate:
               typeof entry.datetime === "string" ? entry.datetime.slice(0, 10) : null,
           };

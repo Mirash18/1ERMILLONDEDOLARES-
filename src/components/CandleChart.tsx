@@ -2066,7 +2066,14 @@ export function CandleChart({
   // Avisa qué acción se está mirando — la Sala de Trading lo usa para que
   // su encabezado (precio, cambio, apertura) siga a la acción del gráfico.
   onSymbolChange,
-}: { fillHeight?: boolean; onSymbolChange?: (symbol: string) => void } = {}) {
+  // Volumen del día (suma de las velas de la última sesión) y la fecha de
+  // esa sesión en Nueva York — para la barra de la Sala de Trading.
+  onVolumenDelDia,
+}: {
+  fillHeight?: boolean;
+  onSymbolChange?: (symbol: string) => void;
+  onVolumenDelDia?: (v: { fecha: string; volumen: number } | null) => void;
+} = {}) {
   const [symbol, setSymbol] = useState<string>("SPY");
   useEffect(() => {
     onSymbolChange?.(symbol);
@@ -3829,6 +3836,47 @@ export function CandleChart({
     // antes de calcular dónde cae el último precio en el panel.
     requestAnimationFrame(updatePriceY);
   }, [data, timeframe, invertScale, updatePriceY]);
+
+  // Volumen de la última sesión COMPLETA (ayer) para la barra de la Sala de
+  // Trading: la suma de sus velas (intradía) o su vela (marco Día). En
+  // Semana/Mes una vela abarca varios días, así que no hay volumen del día.
+  //
+  // No el de hoy: durante la sesión, Twelve Data (plan actual) entrega el
+  // volumen de un solo mercado — el 24 sept. 2026 a las 10:26 las velas de
+  // SPY sumaban 270 mil, contra 37.6 millones del día anterior ya completo.
+  // Mostrar eso como "volumen" de SPY confunde; el de ayer sí es el total.
+  useEffect(() => {
+    if (!onVolumenDelDia) return;
+    const candles = data?.candles;
+    const intradia = INTRADAY_TIMEFRAMES.has(timeframe);
+    if (!candles?.length || data?.symbol !== symbol || (!intradia && timeframe !== "1day")) {
+      onVolumenDelDia(null);
+      return;
+    }
+    // Intradía: fecha en Nueva York. Día: la vela viene a las 00:00 UTC de
+    // su fecha, así que se lee en UTC.
+    const fechaNY = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const fechaDe = (t: number) =>
+      intradia ? fechaNY.format(new Date(t * 1000)) : new Date(t * 1000).toISOString().slice(0, 10);
+    const hoy = fechaNY.format(new Date());
+    // Se saltan las velas de hoy (sesión en curso) y se suma la sesión
+    // anterior entera.
+    let i = candles.length - 1;
+    while (i >= 0 && fechaDe(candles[i].time) === hoy) i--;
+    if (i < 0) {
+      onVolumenDelDia(null);
+      return;
+    }
+    const fecha = fechaDe(candles[i].time);
+    let volumen = 0;
+    for (; i >= 0 && fechaDe(candles[i].time) === fecha; i--) volumen += candles[i].volume;
+    onVolumenDelDia({ fecha, volumen });
+  }, [data, timeframe, symbol, onVolumenDelDia]);
 
   // Flechita "Precio actual": escala de precio automática de nuevo y el
   // mismo encuadre con el que abre el gráfico (lo reciente, con la vela en
