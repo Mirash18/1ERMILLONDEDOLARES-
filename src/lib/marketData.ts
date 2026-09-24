@@ -19,10 +19,26 @@ export type Quote = {
   change: number | null;
   percentChange: number | null;
   isMarketOpen: boolean | null;
+  // Para la barra de la Sala de Trading. Opcionales porque las cotizaciones
+  // guardadas en Redis antes de agregarlos no los traen (se tratan como
+  // "sin dato" hasta el siguiente refresco).
+  open?: number | null;
+  previousClose?: number | null;
+  volume?: number | null;
+  // Día de la sesión a la que corresponde la cotización (AAAA-MM-DD). Antes
+  // de la apertura sigue siendo el día hábil anterior — así se sabe si la
+  // "apertura" es la de hoy o la de ayer.
+  sessionDate?: string | null;
   error?: string;
 };
 
 const TWELVE_DATA_QUOTE_URL = "https://api.twelvedata.com/quote";
+
+function numeroONull(v: unknown): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 function errorQuote(symbol: string, error: string): Quote {
   return {
@@ -141,6 +157,11 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
               typeof entry.is_market_open === "boolean"
                 ? entry.is_market_open
                 : null,
+            open: numeroONull(entry.open),
+            previousClose: numeroONull(entry.previous_close),
+            volume: numeroONull(entry.volume),
+            sessionDate:
+              typeof entry.datetime === "string" ? entry.datetime.slice(0, 10) : null,
           };
 
     results.set(symbol, quote);

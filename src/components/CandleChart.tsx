@@ -2063,8 +2063,14 @@ export function CandleChart({
   // Para la Sala de Trading (gráfico a pantalla completa): en vez del alto
   // fijo de 420px, el panel ocupa toda la altura que le dé su contenedor.
   fillHeight = false,
-}: { fillHeight?: boolean } = {}) {
+  // Avisa qué acción se está mirando — la Sala de Trading lo usa para que
+  // su encabezado (precio, cambio, apertura) siga a la acción del gráfico.
+  onSymbolChange,
+}: { fillHeight?: boolean; onSymbolChange?: (symbol: string) => void } = {}) {
   const [symbol, setSymbol] = useState<string>("SPY");
+  useEffect(() => {
+    onSymbolChange?.(symbol);
+  }, [symbol, onSymbolChange]);
   // "Hora" por defecto: es el marco que la comunidad mira día a día — que
   // cada quien tenga que cambiarlo manualmente cada vez no tenía sentido.
   const [timeframe, setTimeframe] = useState<TimeframeKey>("1h");

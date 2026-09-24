@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import type { Quote } from "@/lib/marketData";
 
 /**
  * Reloj en vivo de la bolsa de EE.UU. (hora de Nueva York), corriendo
@@ -36,18 +37,24 @@ function useHoraNuevaYork(): string | null {
 
 /**
  * Header de la sala de trading con el logo de la marca y la información
- * del símbolo en vivo: símbolo actual, precio, cambio del día y hora.
- * Sin Bid/Ask (se quitó por pedido de Alejo).
+ * de la acción elegida en el gráfico: símbolo, precio, cambio del día
+ * (contra el cierre de ayer) y hora. Sin Bid/Ask (se quitó por pedido de
+ * Alejo). Mientras no hay cotización se muestra "—", nunca un número
+ * inventado.
  */
-export function TradingRoomHeader() {
-  // Valores simulados mientras se integra con datos reales
-  const symbol = "SPY";
-  const price = 595.42;
-  const priceChange = 12.85;
-  const priceChangePercent = 2.2;
+export function TradingRoomHeader({
+  symbol,
+  quote,
+}: {
+  symbol: string;
+  quote: Quote | null;
+}) {
   const lastUpdate = useHoraNuevaYork();
+  const price = quote?.price ?? null;
+  const priceChange = quote?.change ?? null;
+  const priceChangePercent = quote?.percentChange ?? null;
 
-  const isPositive = priceChange >= 0;
+  const isPositive = (priceChange ?? 0) >= 0;
 
   return (
     <div className="shrink-0 border-b border-border bg-gradient-to-r from-bg via-bg to-[#0d1a14]/20">
@@ -77,16 +84,19 @@ export function TradingRoomHeader() {
               {symbol}
             </h1>
             <span className="font-display text-3xl font-medium text-white">
-              ${price.toFixed(2)}
+              {price === null ? "—" : `$${price.toFixed(2)}`}
             </span>
-            <span
-              className={`text-lg font-semibold ${
-                isPositive ? "text-[#089981]" : "text-[#F23645]"
-              }`}
-            >
-              {isPositive ? "+" : ""}
-              {priceChange.toFixed(2)} ({priceChangePercent.toFixed(2)}%)
-            </span>
+            {priceChange !== null && priceChangePercent !== null && (
+              <span
+                className={`text-lg font-semibold ${
+                  isPositive ? "text-[#089981]" : "text-[#F23645]"
+                }`}
+              >
+                {isPositive ? "+" : ""}
+                {priceChange.toFixed(2)} ({isPositive ? "+" : ""}
+                {priceChangePercent.toFixed(2)}%)
+              </span>
+            )}
           </div>
         </div>
 
