@@ -971,6 +971,36 @@ function nextCandleBoundary(nowSeconds: number, timeframe: TimeframeKey): number
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000);
 }
 
+const NY_APERTURA = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+// Próxima apertura de la bolsa (9:30 en Nueva York, lunes a viernes), en
+// Unix segundos. Según el horario de verano cae a las 13:30 o a las 14:30
+// UTC: se prueban las dos y se queda con la que en Nueva York es 9:30.
+function nextSessionOpen(nowSeconds: number): number | null {
+  const d = new Date(nowSeconds * 1000);
+  for (let dia = 0; dia <= 7; dia++) {
+    for (const horaUtc of [13, 14]) {
+      const t =
+        Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + dia, horaUtc, 30) /
+        1000;
+      if (t <= nowSeconds) continue;
+      const parts = NY_APERTURA.formatToParts(new Date(t * 1000));
+      const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+      const esFinDeSemana = get("weekday") === "Sat" || get("weekday") === "Sun";
+      if (!esFinDeSemana && Number(get("hour")) % 24 === 9 && get("minute") === "30") {
+        return t;
+      }
+    }
+  }
+  return null;
+}
+
 const MESES = [
   "ene", "feb", "mar", "abr", "may", "jun",
   "jul", "ago", "sep", "oct", "nov", "dic",
@@ -3049,7 +3079,13 @@ export function CandleChart({
 
     function scheduleNextBoundary() {
       const now = Math.floor(Date.now() / 1000);
-      const boundary = nextCandleBoundary(now, "1h");
+      // La vela de apertura (9:30) no cae en cambio de hora: sin esto, quien
+      // tenía el gráfico abierto desde antes de abrir la veía aparecer tarde.
+      const apertura = nextSessionOpen(now);
+      const boundary = Math.min(
+        nextCandleBoundary(now, "1h"),
+        apertura ?? Number.POSITIVE_INFINITY
+      );
       // +2 s de margen: pedirla en el segundo exacto suele llegar antes de que
       // el proveedor haya cerrado la vela anterior.
       const delay = Math.max((boundary - now) * 1000 + 2000, 1000);

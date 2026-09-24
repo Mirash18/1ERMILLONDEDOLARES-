@@ -64,7 +64,13 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
   const missing: string[] = [];
   symbols.forEach((s, i) => {
     const entry = cachedEntries[i];
-    if (entry && Date.now() - entry.fetchedAt < ttlMs) {
+    // Igual que en getCandles: lo guardado antes de la apertura se descarta
+    // en cuanto arranca la sesión regular.
+    const guardadoAntesDeAbrir =
+      !!entry &&
+      session === "regular" &&
+      nyMarketSession(new Date(entry.fetchedAt)) !== "regular";
+    if (entry && !guardadoAntesDeAbrir && Date.now() - entry.fetchedAt < ttlMs) {
       results.set(s, entry.value);
     } else {
       missing.push(s);
@@ -88,7 +94,8 @@ export async function getQuotes(symbols: string[]): Promise<Quote[]> {
 
   let res: Response;
   try {
-    res = await fetch(url, { next: { revalidate: 30 } });
+    // `no-store`: la única caché es la de Redis — ver el porqué en getCandles.
+    res = await fetch(url, { cache: "no-store" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "error de red";
     missing.forEach((s) => {
@@ -330,7 +337,19 @@ export async function getCandles(
   // `fresh` a propósito), sino para tener algo a lo que caer si el pedido
   // forzado de todos modos falla.
   const cached = await getCached<CandleSeries>(cacheKey);
-  if (!fresh && cached && Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000) {
+  // Lo guardado ANTES de la apertura (p. ej. la precarga de las 7:00 del
+  // cron) no trae la vela de apertura: en cuanto arranca la sesión regular
+  // se descarta, aunque todavía no haya vencido.
+  const guardadoAntesDeAbrir =
+    !!cached &&
+    session === "regular" &&
+    nyMarketSession(new Date(cached.fetchedAt)) !== "regular";
+  if (
+    !fresh &&
+    cached &&
+    !guardadoAntesDeAbrir &&
+    Date.now() - cached.fetchedAt < cacheTtlSeconds(session) * 1000
+  ) {
     return cached.value;
   }
 
@@ -355,17 +374,16 @@ export async function getCandles(
     `&outputsize=${requestedOutputsize}` +
     `&timezone=UTC&apikey=${apiKey}`;
 
-  // El marco intradía necesita refrescarse rápido mientras el mercado está
-  // abierto: si no, la vela en curso se ve congelada. Fuera de sesión, y en
-  // los marcos de día/semana/mes, no hace falta y así se ahorran créditos.
-  const revalidate = isHourly && session === "regular" ? 60 : 300;
-
+  // SIN la caché de datos de Next.js (`no-store`): la única caché es la de
+  // Redis de arriba. Tener las dos hacía que SPY no mostrara la vela de
+  // apertura (24 sept. 2026): el cron guardaba SPY a las 7:00, y después de
+  // las 9:30, al refrescar, la caché de Next devolvía esa respuesta vieja
+  // (sirve lo vencido mientras "revalida en segundo plano", y en Vercel ese
+  // segundo plano no siempre termina) — y se volvía a guardar en Redis como
+  // si fuera nueva. Los créditos siguen acotados por el TTL de Redis.
   let res: Response;
   try {
-    res = await fetch(
-      url,
-      fresh ? { cache: "no-store" } : { next: { revalidate } }
-    );
+    res = await fetch(url, { cache: "no-store" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "error de red";
     return staleOrError(message);
