@@ -982,22 +982,35 @@ function encuadrarVista(
   const ultima = candles[candles.length - 1];
 
   if (intraday) {
-    // Los marcos intradía arrancan centrados en lo reciente — pero no SOLO
-    // en el día en curso: con el mercado recién abierto eso eran apenas
-    // 6-7 velas, demasiado apretado (Alejo pidió alejar el zoom para ver
-    // más contexto). Se muestran los últimos 3 días hábiles completos (de
-    // los que haya cargados) en vez de uno solo — bastantes más velas, sin
-    // llegar a las 300 que se piden de fondo para las PM.
-    const DIAS_VISIBLES_HORA = 3;
-    const diasUnicos = Array.from(
-      new Set(candles.map((c) => Math.floor(c.time / 86400)))
-    ).sort((a, b) => a - b);
-    const diaDesde = diasUnicos[Math.max(0, diasUnicos.length - DIAS_VISIBLES_HORA)];
-    const primeraVisible = candles.find((c) => Math.floor(c.time / 86400) >= diaDesde);
+    // Regla de Alejo (24 sept. 2026) para TODAS las acciones: se ven los
+    // dos últimos días de mercado — la sesión anterior completa a la
+    // izquierda y la de hoy a la derecha — con la vela de APERTURA justo
+    // en el centro. Del centro a la derecha queda el espacio para el día
+    // entero (tantas velas como tuvo la sesión anterior), que se va
+    // llenando a medida que avanza el día. Antes de abrir, "la apertura"
+    // es la de la última sesión (la del marcador), igual que en el gráfico.
+    const dia = (c: CandleSeries["candles"][number]) => Math.floor(c.time / 86400);
+    const ultimoDia = dia(ultima);
+    let apertura = candles.length - 1;
+    while (apertura > 0 && dia(candles[apertura - 1]) === ultimoDia) apertura--;
 
-    chart.timeScale().setVisibleRange({
-      from: (primeraVisible ?? ultima).time as unknown as UTCTimestamp,
-      to: (ultima.time + 3600) as unknown as UTCTimestamp,
+    let inicioAnterior = apertura - 1;
+    if (inicioAnterior >= 0) {
+      const diaAnterior = dia(candles[inicioAnterior]);
+      while (inicioAnterior > 0 && dia(candles[inicioAnterior - 1]) === diaAnterior) {
+        inicioAnterior--;
+      }
+    }
+    // Velas de la sesión anterior (si no hay, lo que lleve la de hoy).
+    const n = Math.max(
+      inicioAnterior >= 0 ? apertura - inicioAnterior : candles.length - apertura,
+      1
+    );
+    // Media vela de margen a cada lado para que las de los bordes no
+    // queden cortadas.
+    chart.timeScale().setVisibleLogicalRange({
+      from: apertura - n - 0.5,
+      to: apertura + n + 0.5,
     });
     return;
   }
@@ -2311,6 +2324,12 @@ export function CandleChart({
   // `símbolo|marco` que ya se encuadró — para reactivar el autoscale del
   // precio solo al cambiar de acción o de marco (ver el efecto que pinta).
   const vistaEncuadradaRef = useRef("");
+  // Marco de tiempo de las velas que hay en `data` (ver loadCandles).
+  const dataTimeframeRef = useRef<string | null>(null);
+  // Tramo visible (índices de vela) que dejó el último encuadre automático:
+  // si al refrescar sigue igual, nadie movió el gráfico y se re-encuadra
+  // (la apertura sigue en el centro); si cambió, se respeta la vista.
+  const ultimoEncuadreRef = useRef<{ from: number; to: number } | null>(null);
 
   // Recalcula en qué altura cae el último precio en el panel — se llama
   // cuando llegan datos nuevos, al cambiar el tamaño del gráfico y al hacer
@@ -3115,7 +3134,13 @@ export function CandleChart({
           `${fresh ? "&fresh=1" : ""}${fillHeight ? "&scope=sala" : ""}&t=${Date.now()}`
       );
       const json: CandleSeries = await res.json();
-      if (id === requestIdRef.current) setData(json);
+      if (id === requestIdRef.current) {
+        // De qué marco son estas velas: el efecto que pinta corre también
+        // al cambiar de marco ANTES de que lleguen las nuevas, y ahí no
+        // debe encuadrar con las viejas.
+        dataTimeframeRef.current = timeframe;
+        setData(json);
+      }
     },
     [symbol, timeframe]
   );
@@ -3751,6 +3776,10 @@ export function CandleChart({
   useEffect(() => {
     if (!data || !candleSeriesRef.current) return;
 
+    // Lo que se ve ANTES de cargar las velas nuevas — para saber si alguien
+    // movió el gráfico desde el último encuadre automático (más abajo).
+    const rangoAntes = chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
+
     candleSeriesRef.current.setData(
       data.candles.map((c) => ({
         time: c.time as unknown as UTCTimestamp,
@@ -3822,14 +3851,35 @@ export function CandleChart({
     // en los precios de SPY y había que bajar a buscar las velas (bug de
     // Alejo). Los refrescos de fondo del mismo símbolo no la tocan, para no
     // deshacerle a nadie el zoom vertical que armó a propósito.
-    const vista = `${data.symbol}|${timeframe}`;
-    if (vistaEncuadradaRef.current !== vista) {
-      vistaEncuadradaRef.current = vista;
-      candleSeriesRef.current.priceScale().applyOptions({ autoScale: true });
-    }
+    //
+    // Encuadre (regla de Alejo: dos últimos días, apertura al centro): al
+    // cambiar de acción o de marco, siempre. En los refrescos de fondo, solo
+    // si nadie movió el gráfico desde el último encuadre — así la apertura
+    // se mantiene al centro, pero no se le deshace la vista cada 5 minutos
+    // a quien se fue a mirar el histórico o hizo zoom.
+    //
+    // Si las velas en pantalla todavía son de otro marco (se acaba de
+    // cambiar y las nuevas no han llegado), no se toca nada.
+    const chart = chartRef.current;
+    if (chart && dataTimeframeRef.current === timeframe) {
+      const vista = `${data.symbol}|${timeframe}`;
+      const cambioDeVista = vistaEncuadradaRef.current !== vista;
+      const ultimo = ultimoEncuadreRef.current;
+      const nadieLoMovio =
+        !!ultimo &&
+        !!rangoAntes &&
+        Math.abs(rangoAntes.from - ultimo.from) < 0.01 &&
+        Math.abs(rangoAntes.to - ultimo.to) < 0.01;
 
-    if (chartRef.current) {
-      encuadrarVista(chartRef.current, data.candles, INTRADAY_TIMEFRAMES.has(timeframe));
+      if (cambioDeVista) {
+        vistaEncuadradaRef.current = vista;
+        candleSeriesRef.current.priceScale().applyOptions({ autoScale: true });
+      }
+      if (cambioDeVista || nadieLoMovio) {
+        encuadrarVista(chart, data.candles, INTRADAY_TIMEFRAMES.has(timeframe));
+        const r = chart.timeScale().getVisibleLogicalRange();
+        ultimoEncuadreRef.current = r ? { from: r.from, to: r.to } : null;
+      }
     }
 
     // Un frame después, para que el autoscale del precio ya haya aplicado
@@ -3888,6 +3938,9 @@ export function CandleChart({
     if (!chart || !series || !candles) return;
     series.priceScale().applyOptions({ autoScale: true });
     encuadrarVista(chart, candles, INTRADAY_TIMEFRAMES.has(timeframe));
+    // Vuelve a quedar "sin tocar": los refrescos siguientes la mantienen.
+    const r = chart.timeScale().getVisibleLogicalRange();
+    ultimoEncuadreRef.current = r ? { from: r.from, to: r.to } : null;
     requestAnimationFrame(updatePriceY);
   }, [timeframe, updatePriceY]);
 
