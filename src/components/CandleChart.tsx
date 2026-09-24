@@ -887,6 +887,12 @@ class DayBandsPrimitive implements ISeriesPrimitive<Time> {
               if (!candles || candles.length === 0) return;
               const timeScale = chart.timeScale();
 
+              // `timeToCoordinate` da el CENTRO de la vela: sin correrlo media
+              // vela a la izquierda, el fondo arrancaba a mitad de la vela de
+              // apertura (la dejaba medio afuera) y se comía media apertura
+              // del día siguiente. Lo reportó Alejo.
+              const half = barSpacingPx(chart) / 2;
+
               target.useMediaCoordinateSpace(({ context, mediaSize }) => {
                 let runStart = 0;
                 for (let i = 1; i <= candles.length; i++) {
@@ -906,8 +912,10 @@ class DayBandsPrimitive implements ISeriesPrimitive<Time> {
                         ? timeScale.timeToCoordinate(candles[i].time as unknown as Time)
                         : mediaSize.width;
                     if (xStart !== null && xEnd !== null) {
+                      const left = xStart - half;
+                      const right = i < candles.length ? xEnd - half : xEnd;
                       context.fillStyle = "rgba(212,175,55,0.05)";
-                      context.fillRect(xStart, 0, xEnd - xStart, mediaSize.height);
+                      context.fillRect(left, 0, right - left, mediaSize.height);
                     }
                   }
                   runStart = i;
