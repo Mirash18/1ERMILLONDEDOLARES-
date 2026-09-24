@@ -204,6 +204,31 @@ function logicalToX(chart: IChartApi, logical: number): number | null {
   return chart.timeScale().logicalToCoordinate(logical as Logical);
 }
 
+// Vela que está DEBAJO del cursor. `coordinateToLogical` de la librería
+// redondea siempre hacia arriba (Math.ceil): con el cursor en la mitad
+// derecha de una vela devolvía la vela SIGUIENTE, y el dibujo arrancaba
+// corrido hacia un lado (lo reportó Alejo con los cuadros). Aquí se corrige
+// a la vela más cercana comparando contra el centro de la vela devuelta.
+function nearestLogical(chart: IChartApi, x: number): number | null {
+  const ts = chart.timeScale();
+  const logical = ts.coordinateToLogical(x);
+  if (logical === null) return null;
+  const center = ts.logicalToCoordinate(logical);
+  const next = ts.logicalToCoordinate((logical + 1) as Logical);
+  if (center === null || next === null) return logical;
+  const spacing = next - center;
+  return center - x > spacing / 2 ? logical - 1 : logical;
+}
+
+// Ancho en píxeles de una vela (su "casilla" completa, con el hueco hasta
+// la siguiente), al zoom actual.
+function barSpacingPx(chart: IChartApi): number {
+  const ts = chart.timeScale();
+  const a = ts.logicalToCoordinate(0 as Logical);
+  const b = ts.logicalToCoordinate(1 as Logical);
+  return a === null || b === null ? 0 : Math.abs(b - a);
+}
+
 // Línea diagonal entre dos puntos — como la "Tendencia" de TradingView.
 // Libre de verdad: el usuario la traza con clic-arrastrar-soltar, viendo la
 // línea seguir el cursor en vivo, y después puede volver a agarrar
@@ -478,11 +503,28 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  // Esquinas del cuadro en píxeles. `p1`/`p2` guardan la vela (su centro),
+  // pero el cuadro se pinta desde el borde IZQUIERDO de la primera vela
+  // hasta el borde DERECHO de la última — media vela hacia afuera a cada
+  // lado — para que quede encima de las velas completas y no partido por
+  // la mitad. Si las dos puntas caen en la misma vela, enmarca esa vela.
+  corners(): { c1: [number, number]; c2: [number, number] } | null {
+    const a = drawPointToPx(this.chart, this.series, this.p1);
+    const b = drawPointToPx(this.chart, this.series, this.p2);
+    if (!a || !b) return null;
+    const half = barSpacingPx(this.chart) / 2;
+    const p1Izquierda = this.p1.logical <= this.p2.logical;
+    return {
+      c1: [a[0] + (p1Izquierda ? -half : half), a[1]],
+      c2: [b[0] + (p1Izquierda ? half : -half), b[1]],
+    };
+  }
+
   hitTestHandle(x: number, y: number): "p1" | "p2" | null {
     if (this.hidden) return null;
-    for (const [key, p] of [["p1", this.p1], ["p2", this.p2]] as const) {
-      const px = drawPointToPx(this.chart, this.series, p);
-      if (!px) continue;
+    const c = this.corners();
+    if (!c) return null;
+    for (const [key, px] of [["p1", c.c1], ["p2", c.c2]] as const) {
       if (Math.hypot(px[0] - x, px[1] - y) <= HANDLE_HIT_RADIUS) return key;
     }
     return null;
@@ -490,9 +532,9 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
 
   hitTestBody(x: number, y: number): boolean {
     if (this.hidden) return false;
-    const a = drawPointToPx(this.chart, this.series, this.p1);
-    const b = drawPointToPx(this.chart, this.series, this.p2);
-    if (!a || !b) return false;
+    const c = this.corners();
+    if (!c) return false;
+    const [a, b] = [c.c1, c.c2];
     return (
       x >= Math.min(a[0], b[0]) &&
       x <= Math.max(a[0], b[0]) &&
@@ -509,12 +551,11 @@ class BoxPrimitive implements ISeriesPrimitive<Time> {
           return {
             draw(target: CanvasRenderingTarget2D) {
               if (primitive.hidden) return;
-              const { chart, series, p1, p2, color } = primitive;
-              const a = drawPointToPx(chart, series, p1);
-              const b = drawPointToPx(chart, series, p2);
-              if (!a || !b) return;
-              const [x1, y1] = a;
-              const [x2, y2] = b;
+              const { color } = primitive;
+              const c = primitive.corners();
+              if (!c) return;
+              const [x1, y1] = c.c1;
+              const [x2, y2] = c.c2;
               target.useMediaCoordinateSpace(({ context }) => {
                 const left = Math.min(x1, x2);
                 const top = Math.min(y1, y2);
@@ -2348,7 +2389,7 @@ export function CandleChart({
         return;
       }
       const price = series.coordinateToPrice(param.point.y);
-      const logical = chart.timeScale().coordinateToLogical(param.point.x);
+      const logical = nearestLogical(chart, param.point.x);
       if (price === null || logical === null) {
         lastHoverPointRef.current = null;
         lastHoverPixelRef.current = null;
@@ -2429,7 +2470,7 @@ export function CandleChart({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       lastHoverPixelRef.current = { x, y };
-      const logical = chart.timeScale().coordinateToLogical(x);
+      const logical = nearestLogical(chart, x);
       const price = series.coordinateToPrice(y);
       lastHoverPointRef.current =
         logical === null || price === null
@@ -2609,9 +2650,8 @@ export function CandleChart({
       const dy = e.clientY - drag.startClientY;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
       if (!drag.moved) return;
-      const ts = chart.timeScale();
       const toPoint = (px: number, py: number): DrawPoint | null => {
-        const logical = ts.coordinateToLogical(px);
+        const logical = nearestLogical(chart, px);
         const price = series.coordinateToPrice(py);
         if (logical === null || price === null) return null;
         return { logical: logical as number, price };
@@ -2723,6 +2763,18 @@ export function CandleChart({
         if (series) series.detachPrimitive(liveBoxRef.current);
         liveBoxRef.current = null;
         if (huboMovimiento && start && end) addBox(start, end);
+        else if (start) {
+          // Clic seco sobre una vela: el cuadro la enmarca entera, de su
+          // mínimo a su máximo — la forma rápida de señalar una vela de
+          // ejemplo.
+          const vela = dataRef.current?.candles[Math.round(start.logical)];
+          if (vela) {
+            addBox(
+              { logical: start.logical, price: vela.high },
+              { logical: start.logical, price: vela.low }
+            );
+          }
+        }
       } else if (tool === "measure" && liveMeasureRef.current) {
         if (series) series.detachPrimitive(liveMeasureRef.current);
         liveMeasureRef.current = null;
