@@ -6,12 +6,16 @@
  * `subscription.ts` importa `@clerk/nextjs/server`, que no se puede meter
  * en un bundle de cliente.
  */
-export type Scope = "introduccion" | "sala";
+export type Scope = "introduccion" | "sala" | "clases";
 
 export const SCOPE_LABELS: Record<Scope, string> = {
   introduccion: "Introducción",
   sala: "Sala de Trading",
+  // Clases en vivo por Zoom (26 sept. 2026) — ver src/app/clases.
+  clases: "Clases con el profesor Miguel",
 };
+
+export const SCOPES = Object.keys(SCOPE_LABELS) as Scope[];
 
 /**
  * Valor especial que guarda "Eliminar acceso" en `publicMetadata.acceso`

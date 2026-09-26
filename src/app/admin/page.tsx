@@ -51,6 +51,12 @@ export default async function AdminPage() {
           </Link>
           <div className="flex items-center gap-5">
             <Link
+              href="/admin/clases"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              Clases con el profesor Miguel
+            </Link>
+            <Link
               href="/admin/testimonios"
               className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
             >

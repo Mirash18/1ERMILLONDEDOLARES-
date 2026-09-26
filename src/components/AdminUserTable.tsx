@@ -395,6 +395,15 @@ export function AdminUserTable() {
                         >
                           prueba gratis
                         </span>
+                      ) : typeof u.acceso[s.scope] === "string" ? (
+                        // Tuvo acceso y se le venció — distinto de "nunca
+                        // tuvo" (—): así se ve de un vistazo quién no renovó.
+                        <span
+                          className="text-red/80"
+                          title="Tuvo acceso y se le venció — no ha renovado."
+                        >
+                          venció {formatFecha(u.acceso[s.scope] ?? null)}
+                        </span>
                       ) : (
                         <span className="text-text-soft opacity-40">—</span>
                       )}

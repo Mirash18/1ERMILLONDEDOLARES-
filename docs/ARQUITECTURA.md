@@ -1532,6 +1532,41 @@ por defecto, donde más se trabaja — la primera vez que se abre la acción en
 Se mantiene el guardado por hora (no por índice de vela): sigue haciendo
 falta para que los dibujos no se corran con los días.
 
+## Clases con el profesor Miguel — por Zoom (26 sept. 2026)
+
+Paso 2 del plan de lanzamiento acordado con Alejo (2 clases → 3 planes →
+4 Botón de Bold → 5 control en admin → 1 dominio/Clerk producción, al
+final). Las clases van por **Zoom** mientras tanto: transmitir dentro de la
+página no sirve todavía porque mucha gente mira la clase desde el celular
+y opera desde el mismo celular.
+
+- Pestaña **"Clases con el profesor Miguel"** en el menú (se quitó "en
+  construcción · fase 1"). El menú completo necesita ~1080 px: por debajo
+  de `xl` pasa al botón ☰ (a 1024 px se salía por la derecha).
+- Nueva sección de acceso `clases` en `scopes.ts` → aparece sola como
+  columna en la tabla de /admin, con el mismo "dar acceso por N días" que
+  las demás. La tabla ahora distingue **"venció [fecha]"** (tuvo y no
+  renovó) de "—" (nunca tuvo), para ver quién no pagó.
+- Regla (`getAccesoClase` en `subscription.ts`): entra quien tenga
+  `clases` vigente; y el día marcado como **clase abierta del plan
+  básico** entra también quien tenga la Sala de Trading pagada o dada a
+  mano (la semana gratis NO cuenta). "Eliminar acceso" en Clases lo deja
+  afuera también ese día.
+- `/clases`: el botón "Entrar a la clase" NO lleva el link de Zoom —
+  apunta a `/api/clases/entrar`, que revisa el acceso, anota el ingreso y
+  recién ahí redirige a Zoom. Quien no tiene acceso no puede sacar el link
+  del código de la página. (Quien entra sí puede compartirlo: Alejo lo
+  sabe y lo acepta por ahora.)
+- `/admin/clases`: link de Zoom de la semana, día de la clase abierta del
+  básico, y **"Quién entró a la clase"** (registro de clics en "Entrar",
+  lo más cercano a asistencia: la página no ve quién está dentro de Zoom).
+  Todo en Redis (`clases:config`, `clases:ingresos`, tope 2000).
+- Probado en local: /clases sin sesión, la ruta de entrada devuelve a
+  /clases sin filtrar el link, menú en 1024 px, y el admin de clases con
+  datos de ejemplo (página temporal, borrada). Guardar config y el acceso
+  con cuenta real solo se pueden probar en producción (en local no hay
+  Redis ni sesión de admin).
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

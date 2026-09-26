@@ -176,6 +176,44 @@ export async function getAccess(scope?: Scope): Promise<Access> {
 }
 
 /**
+ * ¿Puede entrar HOY a la clase del profesor Miguel? (ver src/lib/clases.ts)
+ *
+ *   - Con acceso a "clases" vigente (plan completo, o dado a mano en
+ *     /admin): entra cualquier día → `via: "clases"`.
+ *   - Plan básico: trae gráficas + UN día de clase, el que marque el admin
+ *     (`fechaClaseAbierta`). Ese día entra quien tenga la Sala de Trading
+ *     pagada o dada a mano → `via: "clase-abierta"`. La semana gratis de la
+ *     Sala NO cuenta: es para probar las gráficas, no incluye clase.
+ *   - "Eliminar acceso" en la columna de Clases lo deja afuera también el
+ *     día de la clase abierta.
+ */
+export async function getAccesoClase(
+  fechaClaseAbierta: string | null,
+  hoy: string
+): Promise<Access & { via?: "clases" | "clase-abierta" }> {
+  if (!accountsConfigured()) {
+    return { status: "sin-configurar", allowed: false };
+  }
+  const { userId } = await auth();
+  if (!userId) {
+    return { status: "sin-cuenta", allowed: false };
+  }
+
+  const user = await currentUser();
+  const acceso = user?.publicMetadata?.acceso as AccesoManual | undefined;
+  if (accesoBloqueado(acceso, "clases")) {
+    return { status: "sin-suscripcion", allowed: false };
+  }
+  if (user?.publicMetadata?.suscripcion === "activa" || accesoManualVigente(acceso, "clases")) {
+    return { status: "activa", allowed: true, via: "clases" };
+  }
+  if (fechaClaseAbierta === hoy && accesoManualVigente(acceso, "sala")) {
+    return { status: "activa", allowed: true, via: "clase-abierta" };
+  }
+  return { status: "sin-suscripcion", allowed: false };
+}
+
+/**
  * Igual que `getAccess()`, pero para lo que deciden las rutas de datos
  * (`/api/candles`, `/api/premarket`, `/api/earnings`, `/api/universe`,
  * `/api/quotes`) sobre si dejan pasar un símbolo del universo pagado.

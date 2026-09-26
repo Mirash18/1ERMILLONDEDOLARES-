@@ -37,7 +37,7 @@ export function AuthStatus({
         <SignInButton mode="modal">
           <button
             type="button"
-            className={`font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold ${
+            className={`whitespace-nowrap font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold ${
               apilado ? "py-2 text-left" : ""
             }`}
           >
@@ -47,7 +47,7 @@ export function AuthStatus({
         <SignUpButton mode="modal">
           <button
             type="button"
-            className={`rounded border border-gold/40 px-3 py-1.5 font-sans text-[11px] uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold/10 ${
+            className={`whitespace-nowrap rounded border border-gold/40 px-3 py-1.5 font-sans text-[11px] uppercase tracking-[0.14em] text-gold transition-colors hover:bg-gold/10 ${
               apilado ? "py-2.5 text-center" : ""
             }`}
           >
@@ -58,7 +58,7 @@ export function AuthStatus({
       <Show when="signed-in">
         <Link
           href="/introduccion"
-          className={`font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold ${
+          className={`whitespace-nowrap font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold ${
             apilado ? "py-2" : ""
           }`}
         >

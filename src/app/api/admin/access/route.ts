@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { isAdmin } from "@/lib/admin";
-import { ACCESO_BLOQUEADO } from "@/lib/scopes";
+import { ACCESO_BLOQUEADO, SCOPES } from "@/lib/scopes";
 import type { Scope } from "@/lib/subscription";
-
-const SCOPES: Scope[] = ["introduccion", "sala"];
 
 /**
  * Da o quita acceso manual a una o más secciones (`scopes`) —
  * `publicMetadata.acceso` en Clerk, ver `subscription.ts` — a una lista de
  * usuarios de una sola vez.
  *
- * Body: `{ userIds: string[], scopes: ("introduccion" | "sala")[], days:
+ * Body: `{ userIds: string[], scopes: Scope[] (ver SCOPES), days:
  * number | null }` — `days` es cuántos días de acceso a partir de ahora (7,
  * 14, 30...); `null` es "Eliminar acceso": guarda `ACCESO_BLOQUEADO` en vez
  * de una fecha, para que quede bloqueada de verdad — incluyendo cualquier

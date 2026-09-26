@@ -12,8 +12,9 @@ import { AuthStatus } from "./AuthStatus";
  * en una sola fila y sin plan para pantallas angostas: entre ~600 y
  * ~800 px de ancho, "Sala de Trading" se partía en dos líneas y se
  * montaba encima del logo. Ahora los enlaces se esconden detrás de un
- * botón de menú por debajo de `md`, y el logo nunca cede espacio
- * (`shrink-0`).
+ * botón de menú por debajo de `xl` (desde que entró la pestaña larga
+ * "Clases con el profesor Miguel", el menú completo necesita ~1080 px), y el
+ * logo nunca cede espacio (`shrink-0`).
  *
  * Queda pegado arriba al desplazarse, con el fondo semitransparente y
  * desenfocado — así el degradado azul/oliva del hero se sigue viendo
@@ -21,6 +22,7 @@ import { AuthStatus } from "./AuthStatus";
  */
 
 const NAV_LINKS = [
+  { href: "/clases", label: "Clases con el profesor Miguel" },
   { href: "/sala-de-trading", label: "Sala de Trading" },
   { href: "/calculadora", label: "Calculadora" },
 ];
@@ -39,7 +41,7 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-bg/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <Link
           href="/"
           className="flex shrink-0 items-center gap-2.5 transition-opacity hover:opacity-80"
@@ -58,16 +60,12 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-6 md:flex">
-          <span className="hidden items-center gap-2 font-sans text-[10px] uppercase tracking-[0.14em] text-text-soft lg:inline-flex">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold/70" />
-            en construcción · fase 1
-          </span>
+        <nav className="hidden items-center gap-6 xl:flex">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
+              className="whitespace-nowrap font-sans text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-gold"
             >
               {link.label}
             </Link>
@@ -80,7 +78,7 @@ export function SiteHeader() {
           onClick={() => setMenuOpen((o) => !o)}
           aria-expanded={menuOpen}
           aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
-          className="-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded text-text-soft transition-colors hover:text-text md:hidden"
+          className="-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded text-text-soft transition-colors hover:text-text xl:hidden"
         >
           <svg
             width="20"
@@ -109,7 +107,7 @@ export function SiteHeader() {
       </div>
 
       {menuOpen && (
-        <div className="border-t border-border bg-panel md:hidden">
+        <div className="border-t border-border bg-panel xl:hidden">
           <nav className="mx-auto flex max-w-5xl flex-col px-6 py-2">
             {NAV_LINKS.map((link) => (
               <Link
@@ -124,10 +122,6 @@ export function SiteHeader() {
             <div className="py-4">
               <AuthStatus orientation="stack" />
             </div>
-            <span className="flex items-center gap-2 pb-3 font-sans text-[10px] uppercase tracking-[0.14em] text-text-soft/70">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold/70" />
-              en construcción · fase 1
-            </span>
           </nav>
         </div>
       )}
