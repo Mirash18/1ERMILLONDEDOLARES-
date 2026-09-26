@@ -3692,13 +3692,20 @@ export function CandleChart({
     });
   }, []);
 
-  // --- Persistencia de dibujos (localStorage, por símbolo) ---
+  // --- Persistencia de dibujos (localStorage, por símbolo Y marco) ---
   // Alejo lo reportó: dibujaba, recargaba la página y se borraba todo. Se
-  // guardan por SÍMBOLO en el navegador y se recrean al cargar. Desde la
-  // pantalla dividida (24 sept. 2026) se guardan por fecha y hora — ver
-  // logicalATiempo/tiempoALogical — así valen en cualquier marco, y los dos
-  // gráficos comparten los dibujos de una misma acción.
-  const drawStorageKey = (sym: string) => `millon:draw:${sym}`;
+  // guardan en el navegador y se recrean al cargar, por fecha y hora (ver
+  // logicalATiempo/tiempoALogical) para que no se corran con los días.
+  //
+  // Por SÍMBOLO Y MARCO (decisión de Alejo, 24 sept. 2026): lo dibujado en
+  // 1h queda solo en 1h, lo de Día solo en Día, etc. Compartirlos entre
+  // marcos llenaba el gráfico de Día de cuadros enormes hechos en 1h. En la
+  // pantalla dividida, dos gráficos con la misma acción Y el mismo marco sí
+  // comparten sus dibujos.
+  const drawStorageKey = (sym: string, tf: string) => `millon:draw:${sym}:${tf}`;
+  // Donde se guardaba antes (solo por símbolo, sin marco). Ver la migración
+  // en CARGAR.
+  const drawStorageKeyViejo = (sym: string) => `millon:draw:${sym}`;
 
   // Clave de las velas que hay en pantalla (ver hydratedKeyRef). `null`
   // mientras no sean de ESTE símbolo y ESTE marco — p. ej. recién cambiado
@@ -3721,7 +3728,7 @@ export function CandleChart({
     if (!claveVelas || !data || hydratedKeyRef.current !== claveVelas) return;
     const candles = data.candles;
     const paso = SEGUNDOS_POR_VELA[timeframe] ?? 3600;
-    const clave = drawStorageKey(symbol);
+    const clave = drawStorageKey(symbol, timeframe);
 
     let previo: DibujosGuardados = {};
     try {
@@ -3789,7 +3796,7 @@ export function CandleChart({
       // acción, recarga sus dibujos).
       window.dispatchEvent(
         new CustomEvent(EVENTO_DIBUJOS, {
-          detail: { symbol, origen: instanciaIdRef.current },
+          detail: { symbol, timeframe, origen: instanciaIdRef.current },
         })
       );
     } catch {
@@ -3835,7 +3842,20 @@ export function CandleChart({
     const candles = data.candles;
     const paso = SEGUNDOS_POR_VELA[timeframe] ?? 3600;
     try {
-      const raw = localStorage.getItem(drawStorageKey(symbol));
+      let raw = localStorage.getItem(drawStorageKey(symbol, timeframe));
+      // Migración: hasta el 24 sept. 2026 los dibujos se guardaban por
+      // símbolo, compartidos por todos los marcos — no hay forma de saber
+      // en qué marco se hizo cada uno. Se pasan a "1h" (el marco por
+      // defecto, donde más se trabaja) y se borra la llave vieja, para que
+      // no vuelvan a aparecer en Día/Mes.
+      if (!raw && timeframe === "1h") {
+        const viejo = localStorage.getItem(drawStorageKeyViejo(symbol));
+        if (viejo) {
+          localStorage.setItem(drawStorageKey(symbol, timeframe), viejo);
+          localStorage.removeItem(drawStorageKeyViejo(symbol));
+          raw = viejo;
+        }
+      }
       if (!raw) return;
       const saved = JSON.parse(raw) as DibujosGuardados;
       // Formato nuevo: hora (`t`). Formato viejo (antes del 24 sept. 2026):
@@ -3902,16 +3922,22 @@ export function CandleChart({
   ]);
 
   // El otro gráfico de la pantalla dividida (o esta misma página abierta en
-  // otra pestaña) guardó dibujos de esta acción: recargar los de aquí.
+  // otra pestaña) guardó dibujos de esta acción y este marco: recargar los
+  // de aquí.
   useEffect(() => {
     const onAviso = (e: Event) => {
-      const d = (e as CustomEvent<{ symbol: string; origen: string }>).detail;
-      if (d?.symbol === symbol && d.origen !== instanciaIdRef.current) {
+      const d = (e as CustomEvent<{ symbol: string; timeframe: string; origen: string }>)
+        .detail;
+      if (
+        d?.symbol === symbol &&
+        d.timeframe === timeframe &&
+        d.origen !== instanciaIdRef.current
+      ) {
         setVersionDibujos((v) => v + 1);
       }
     };
     const onOtraPestana = (e: StorageEvent) => {
-      if (e.key === drawStorageKey(symbol)) setVersionDibujos((v) => v + 1);
+      if (e.key === drawStorageKey(symbol, timeframe)) setVersionDibujos((v) => v + 1);
     };
     window.addEventListener(EVENTO_DIBUJOS, onAviso);
     window.addEventListener("storage", onOtraPestana);
@@ -3919,7 +3945,7 @@ export function CandleChart({
       window.removeEventListener(EVENTO_DIBUJOS, onAviso);
       window.removeEventListener("storage", onOtraPestana);
     };
-  }, [symbol]);
+  }, [symbol, timeframe]);
 
   // Cuadro de texto — un solo clic lo coloca (como la línea horizontal) con
   // un tamaño y texto por defecto, y queda pendiente de foco (ver el efecto

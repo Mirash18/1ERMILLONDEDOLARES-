@@ -1515,6 +1515,23 @@ llegan atrasadas — parece un bug y no lo es. Para probar la pantalla
 dividida se bajó temporalmente el mínimo de 768 px a 500 px con el tamaño
 normal del panel (y se devolvió).
 
+### Corrección: los dibujos son por acción Y por marco (26 sept. 2026)
+
+Alejo encontró que lo dibujado en 1h aparecía en Día (y en Mes): un cuadro
+que enmarcaba una vela de 1h se veía enorme en Día. Decisión suya: cada
+marco guarda sus propios dibujos. La llave pasó de `millon:draw:SÍMBOLO` a
+`millon:draw:SÍMBOLO:MARCO` (p. ej. `millon:draw:SPY:1h`). En la pantalla
+dividida, dos gráficos comparten dibujos solo si tienen la misma acción Y
+el mismo marco (el aviso `millon:dibujos` lleva ahora también el marco).
+
+Migración: lo guardado con la llave vieja (compartida por todos los
+marcos) no dice en qué marco se hizo, así que se pasa a **1h** — el marco
+por defecto, donde más se trabaja — la primera vez que se abre la acción en
+1h, y la llave vieja se borra (para que no reaparezca en Día/Mes).
+
+Se mantiene el guardado por hora (no por índice de vela): sigue haciendo
+falta para que los dibujos no se corran con los días.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
