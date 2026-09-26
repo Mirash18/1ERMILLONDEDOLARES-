@@ -240,6 +240,16 @@ que lea datos que cambian, **acordarse de esto**.
 manda Alejo se usa Python con OpenCV (`cv2.VideoCapture`), extrayendo
 fotogramas cada X segundos a una carpeta temporal. Funciona bien.
 
+**7. Llaves de Clerk a medias = "inicio sesión pero la página no me
+reconoce".** El 26 sept. 2026 se cambió `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+a `pk_live_` pero `CLERK_SECRET_KEY` seguía `sk_test_` (al buscar "SECRET"
+en Vercel, la llave se pegó por error en `STRIPE_WEBHOOK_SECRET`). Síntoma:
+arriba sale el avatar (el navegador sí inició sesión) pero el servidor te
+trata como visitante y /admin no deja entrar. Diagnóstico seguro: F12 →
+Network → la primera petición → Response Headers → `x-clerk-auth-reason:
+jwk-kid-mismatch`. Arreglo: poner la `sk_live_` en `CLERK_SECRET_KEY`
+(revisar que la fila diga "Updated" hoy) y Redeploy.
+
 **6. El input de archivo no se puede llenar por automatización.** Si hay
 que probar una subida, Alejo tiene que seleccionar el archivo a mano —
 el selector del sistema operativo está fuera del alcance del navegador
