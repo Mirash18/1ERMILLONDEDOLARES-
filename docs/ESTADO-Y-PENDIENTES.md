@@ -19,7 +19,7 @@ profesor Miguel Cortés.
 | Repo | `github.com/Mirash18/1ERMILLONDEDOLARES-` (rama `main`) |
 | Sitio en vivo | https://1-ermillondedolares-in8t.vercel.app |
 | Proyecto en Vercel | `mirash18/1-ermillondedolares-in8t` (plan Hobby) |
-| Dominio comprado | `1ermillondedolares.com` — **todavía no conectado** |
+| Dominio | `1ermillondedolares.com` — **conectado el 26 sept. 2026**. Comprado en **Cloudflare** (registrado el 8 sept. 2026, vence el **8 sept. 2027**). DNS en Cloudflare: dos CNAME (`@` y `www`) → Vercel, en **DNS only** (nube gris; con la nube naranja Cloudflare se mete en medio y choca con el certificado de Vercel). La principal es `https://www.1ermillondedolares.com`; la raíz redirige (308) a www. |
 | Stack | Next.js 16 (App Router) + TypeScript + Tailwind v4 |
 | Carpeta local | `C:\Users\Alejo\Desktop\cloude` |
 
@@ -180,7 +180,8 @@ mandó Alejo. Faltan estas secciones:
    when deploying your application to production."* Hay que crear una
    instancia de producción en Clerk antes de abrirle el sitio a gente
    real.
-9. **Conectar el dominio `1ermillondedolares.com`** (ya está comprado).
+9. ~~Conectar el dominio `1ermillondedolares.com`~~ — **hecho el 26 sept.
+   2026** (ver la tabla de arriba).
 10. **Pasarela de pago** (Fase 3). En `ARQUITECTURA.md` quedó documentado
     que se descartó Stripe y se eligió MercadoPago, pero el paquete de
     Stripe sigue instalado y hay rutas de Stripe en el código
