@@ -174,7 +174,19 @@ mandó Alejo. Faltan estas secciones:
    acordó dejarlas para una conversación aparte. Siguen pendientes.
 
 ### D. Cosas del negocio / infraestructura
-8. **Clerk sigue con llaves de desarrollo en producción.** La consola del
+8. ~~Clerk con llaves de desarrollo~~ — **hecho el 26 sept. 2026**:
+   instancia de producción clonada de desarrollo, dominio
+   `1ermillondedolares.com` verificado (5 CNAME de Clerk en Cloudflare,
+   DNS only, agregados con "Configure automatically"), Google con
+   credenciales propias (proyecto "1er Millon de Dolares" en Google Cloud,
+   app **publicada "En producción"**, sin logo para no disparar revisión;
+   exige la política en `/privacidad`), llaves `pk_live_`/`sk_live_` en
+   Vercel y `ADMIN_EMAILS = alejo012g@gmail.com,micorte8@gmail.com`. Las
+   cuentas de desarrollo NO pasaron a producción: todos se registran de
+   nuevo y los accesos manuales hay que volver a darlos.
+   Correo de contacto: `contacto@1ermillondedolares.com` → Gmail de Alejo
+   (Cloudflare Email Routing, gratis; solo recibe).
+   Texto viejo del pendiente, para contexto: **Clerk sigue con llaves de desarrollo en producción.** La consola del
    navegador muestra: *"Clerk has been loaded with development keys.
    Development instances have strict usage limits and should not be used
    when deploying your application to production."* Hay que crear una
