@@ -1596,6 +1596,51 @@ en el paso 4 (cobro con Bold).
 - Mientras el cobro en línea no esté (paso 4), el botón de cada plan dice
   "Pago en línea muy pronto".
 
+## Cobro con el Botón de pagos de Bold (26 sept. 2026)
+
+Pasos 4 y 5 del plan de lanzamiento. Se eligió **Bold** (Alejo ya cobra
+con Bold) y su **Botón de pagos** en vez del Link de pago: con el link,
+Bold no le dice a la página QUIÉN pagó; con el botón, cada pago va
+amarrado a la cuenta y el acceso se abre solo. **Bold no tiene
+suscripciones** (cobro automático mensual): cada pago es único; lo
+automático es que el acceso se abre y se vence solo, y la Sala avisa 3
+días antes ("Renovar"). MercadoPago sí cobraba solo, pero se prefirió
+Bold por ya estar configurado.
+
+Cómo funciona (`src/lib/bold.ts`):
+1. `/api/pagos/orden` crea la orden en Redis (`bold:orden:ID`, amarrada
+   al usuario de Clerk) y la firma: SHA-256 de
+   `{orden}{monto}{moneda}{llave secreta}` — nadie puede cambiar el monto.
+2. `BotonPagoBold` abre la pasarela (`BoldCheckout`, librería de Bold).
+3. Se confirma por dos caminos: `/pago/resultado` (al volver, **le
+   pregunta a Bold** el estado por la API `payment-voucher` — el
+   `bold-tx-status` de la URL no se usa) y el webhook
+   `/api/webhooks/bold` (firma HMAC-SHA256 del cuerpo en base64; en
+   pruebas Bold firma con llave vacía, `BOLD_PRUEBAS=1`). **En modo de
+   pruebas Bold no manda webhooks**, por eso el primer camino es el que
+   hace funcionar las pruebas. Candado en Redis por orden: el plan se
+   aplica una sola vez aunque lleguen los dos (y se suelta si algo falla a
+   mitad, para que el reintento lo aplique).
+4. `calcularAcceso` (`src/lib/planesAcceso.ts`, sin dependencias para
+   poder probarlo) escribe las fechas en `publicMetadata.acceso` de Clerk
+   — el mismo lugar que el acceso manual de /admin — y la racha del
+   Premium en `publicMetadata.premium`. Probado con fechas: el ejemplo de
+   Alejo (pagos 29 sep, 6, 13, 20 oct) deja la Sala hasta el 19 dic;
+   pagar 2 días tarde sigue la racha, 5 días tarde la reinicia; Básico se
+   suma; Anual un año.
+5. `/admin/pagos`: cada pago aprobado, plan, monto y cómo quedó el
+   acceso (marca "prueba" los del modo de pruebas).
+
+Llaves en Vercel (nunca en el código): `BOLD_IDENTITY_KEY`,
+`BOLD_SECRET_KEY`, `BOLD_PRUEBAS=1` mientras sean las de pruebas. Sin
+llaves, los botones dicen "Pago en línea muy pronto".
+
+**Pendiente de confirmar en el modo de pruebas**: Bold pide el monto "sin
+decimales". En USD se manda en centavos ($12.59 → 1259); si la pasarela
+muestra $1,259, Bold no acepta centavos en USD. Además, **en USD Bold solo
+acepta tarjeta** (no PSE ni Nequi) y convierte a pesos con la TRM del día
+— decisión de negocio pendiente: USD o pesos.
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que

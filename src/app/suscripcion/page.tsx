@@ -2,6 +2,7 @@ import Link from "next/link";
 import { currentUser } from "@clerk/nextjs/server";
 import { AuthStatus } from "@/components/AuthStatus";
 import { Planes } from "@/components/Planes";
+import { boldConfigurado } from "@/lib/bold";
 import { accountsConfigured } from "@/lib/subscription";
 import { ACCESO_BLOQUEADO } from "@/lib/scopes";
 
@@ -79,7 +80,7 @@ export default async function Suscripcion() {
           </section>
         )}
 
-        <Planes conCuenta={Boolean(user)} />
+        <Planes conCuenta={Boolean(user)} pagosListos={boldConfigurado()} />
 
         <p className="mt-10 text-center text-sm text-text-soft">
           Precios en dólares (USD). El pago se procesa con Bold: nosotros no guardamos ni

@@ -3,11 +3,45 @@ import { currentUser } from "@clerk/nextjs/server";
 import { TradingRoom } from "@/components/TradingRoom";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Planes } from "@/components/Planes";
+import { boldConfigurado } from "@/lib/bold";
 import { FREE_TRIAL_DAYS, getAccess } from "@/lib/subscription";
 import { ACCESO_BLOQUEADO } from "@/lib/scopes";
 
 // Depende de la sesión: nunca estática.
 export const dynamic = "force-dynamic";
+
+const DIA = 24 * 60 * 60 * 1000;
+// Con cuántos días de anticipación se avisa que se vence el acceso (Bold no
+// cobra solo: hay que recordarle a la persona que renueve).
+const DIAS_AVISO = 3;
+
+/**
+ * Franja de aviso para quien SÍ entra: si su acceso (plan o semana gratis)
+ * se vence en DIAS_AVISO días o menos. `null` si no hay nada que avisar.
+ */
+async function avisoVencimiento(): Promise<string | null> {
+  const user = await currentUser();
+  if (!user) return null;
+  const hasta = (user.publicMetadata?.acceso as Record<string, unknown> | undefined)?.sala;
+  const ahora = Date.now();
+  const fin =
+    typeof hasta === "string" && hasta !== ACCESO_BLOQUEADO && new Date(hasta).getTime() > ahora
+      ? new Date(hasta).getTime()
+      : user.createdAt + FREE_TRIAL_DAYS * DIA;
+  const esPrueba = !(typeof hasta === "string" && new Date(hasta).getTime() > ahora);
+  // Entró por otra vía sin fecha (p. ej. suscripción vieja): nada que avisar.
+  if (fin <= ahora || fin - ahora > DIAS_AVISO * DIA) return null;
+
+  const dia = new Date(fin).toLocaleDateString("es-CO", {
+    timeZone: "America/Bogota",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return esPrueba
+    ? `Tu semana gratis termina el ${dia}. Elige un plan para seguir en la Sala.`
+    : `Tu acceso a la Sala de Trading vence el ${dia}. Renueva para no perderlo.`;
+}
 
 /**
  * Sala de Trading — gráfico a pantalla completa como TradingView, con
@@ -23,7 +57,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function SalaDeTrading() {
   const access = await getAccess("sala");
-  if (access.allowed) return <TradingRoom />;
+  if (access.allowed) return <TradingRoom aviso={await avisoVencimiento()} />;
 
   const sinCuenta = access.status === "sin-cuenta";
   const user = sinCuenta ? null : await currentUser();
@@ -62,7 +96,7 @@ export default async function SalaDeTrading() {
           )}
         </section>
 
-        <Planes conCuenta={!sinCuenta} />
+        <Planes conCuenta={!sinCuenta} pagosListos={boldConfigurado()} />
 
         <p className="mt-10 text-center text-sm text-text-soft">
           Precios en dólares (USD). El pago se procesa con Bold: nosotros no guardamos ni

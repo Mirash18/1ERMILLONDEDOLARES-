@@ -1,5 +1,6 @@
 import { SignUpButton } from "@clerk/nextjs";
-import { PLANES, formatoPrecio, type PlanId } from "@/lib/planes";
+import { PLANES, formatoPrecio } from "@/lib/planes";
+import { BotonPagoBold } from "./BotonPagoBold";
 
 /**
  * Las tres tarjetas de planes (Básico / Premium / Anual — ver lib/planes.ts).
@@ -7,16 +8,15 @@ import { PLANES, formatoPrecio, type PlanId } from "@/lib/planes";
  *
  * El botón de cada plan depende de quién mira:
  *   - sin cuenta → "Crea tu cuenta" (el pago va amarrado a una cuenta);
- *   - con cuenta → pagar ese plan (`botonPago`, lo pone quien usa esto —
- *     el Botón de Bold del paso 4). Mientras el cobro en línea no esté
- *     listo, "Disponible muy pronto".
+ *   - con cuenta → "Pagar con Bold" (ver lib/bold.ts), si las llaves de
+ *     Bold están puestas (`pagosListos`); si no, "Pago en línea muy pronto".
  */
 export function Planes({
   conCuenta,
-  botonPago,
+  pagosListos,
 }: {
   conCuenta: boolean;
-  botonPago?: (plan: PlanId) => React.ReactNode;
+  pagosListos: boolean;
 }) {
   return (
     <div className="grid gap-5 md:grid-cols-3">
@@ -71,8 +71,8 @@ export function Planes({
                   Crea tu cuenta para inscribirte
                 </button>
               </SignUpButton>
-            ) : botonPago ? (
-              botonPago(p.id)
+            ) : pagosListos ? (
+              <BotonPagoBold plan={p.id} destacado={p.destacado} />
             ) : (
               <button
                 type="button"

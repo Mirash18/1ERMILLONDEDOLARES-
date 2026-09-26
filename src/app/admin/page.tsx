@@ -51,6 +51,12 @@ export default async function AdminPage() {
           </Link>
           <div className="flex items-center gap-5">
             <Link
+              href="/admin/pagos"
+              className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
+            >
+              Pagos
+            </Link>
+            <Link
               href="/admin/clases"
               className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-soft transition-colors hover:text-text"
             >
@@ -81,9 +87,9 @@ export default async function AdminPage() {
             Personas registradas
           </h1>
           <p className="mt-3 max-w-xl text-sm text-text-soft">
-            Mientras el cobro automático no está listo, el acceso a las
-            clases y demás contenido pagado se da desde aquí, a mano, por un
-            tiempo limitado.
+            Los pagos con Bold dan el acceso solos (ver Pagos). Desde aquí
+            también se puede dar o quitar a mano, por un tiempo limitado —
+            por ejemplo a quien pagó por fuera de la página.
           </p>
         </section>
 

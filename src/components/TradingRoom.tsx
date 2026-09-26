@@ -58,7 +58,12 @@ function useEsAncho(): boolean {
   return ancho;
 }
 
-export function TradingRoom() {
+export function TradingRoom({
+  // Franja "se te vence el acceso — renovar" (la arma la página de la sala).
+  aviso = null,
+}: {
+  aviso?: string | null;
+} = {}) {
   // `null` hasta leer lo recordado — los gráficos no se montan antes, para
   // que arranquen directo con la acción y el marco de la última visita.
   const [diseno, setDiseno] = useState<Diseno | null>(null);
@@ -172,6 +177,17 @@ export function TradingRoom() {
 
   return (
     <div className="flex h-screen flex-col bg-bg">
+      {aviso && (
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-gold/40 bg-gold/10 px-4 py-2 text-center text-sm text-text">
+          <span>{aviso}</span>
+          <a
+            href="/suscripcion"
+            className="rounded bg-gold px-3 py-1 font-sans text-xs font-medium text-bg hover:opacity-90"
+          >
+            Renovar
+          </a>
+        </div>
+      )}
       <TradingRoomHeader symbol={symbol} quote={quote} />
       <TradingInfoBar quote={quote} volumenDia={volumenes[activo]} />
       <main className="flex min-h-0 flex-1 gap-3 overflow-hidden px-3 py-3">
