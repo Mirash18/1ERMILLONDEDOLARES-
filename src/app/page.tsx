@@ -166,7 +166,10 @@ export default async function Home() {
       </div>
 
       <footer className="border-t border-border px-6 py-6 text-center font-sans text-[11px] text-text-soft">
-        1er Millón de Dólares — contenido educativo, no es asesoría financiera.
+        1er Millón de Dólares — contenido educativo, no es asesoría financiera. ·{" "}
+        <Link href="/privacidad" className="hover:text-gold">
+          Política de privacidad
+        </Link>
       </footer>
     </div>
   );
