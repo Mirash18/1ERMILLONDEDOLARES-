@@ -1,44 +1,36 @@
 import Link from "next/link";
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
+import { currentUser } from "@clerk/nextjs/server";
 import { AuthStatus } from "@/components/AuthStatus";
-import {
-  ACCESS_MESSAGE,
-  getAccess,
-  paymentsConfigured,
-} from "@/lib/subscription";
+import { Planes } from "@/components/Planes";
+import { accountsConfigured } from "@/lib/subscription";
+import { ACCESO_BLOQUEADO } from "@/lib/scopes";
 
-// Lo que YA funciona hoy y entra con la suscripción.
-const incluidoAhora = [
-  "Gráfico de velas en vivo con marcos de hora, día, semana y mes",
-  "Medias móviles de 20, 40, 100 y 200 periodos",
-  "Bandas de Bollinger y volumen",
-  "Vela de apertura señalada y cuenta atrás de la vela en curso",
-];
+// Depende de la sesión (qué botón mostrar, hasta cuándo tiene acceso).
+export const dynamic = "force-dynamic";
 
-// Lo que está construido a medias o todavía no existe. Va aparte y dicho con
-// todas las letras: no se le cobra a nadie por algo que aún no puede usar.
-const enCamino = [
-  {
-    texto: "Universo completo del S&P 500 y el Nasdaq",
-    nota: "Depende de subir el plan de datos",
-  },
-  {
-    texto: "Clases en vivo con el profesor Miguel Cortés",
-    nota: "Fase 4",
-  },
-  {
-    texto: "Estudios técnicos adicionales (RSI y más)",
-    nota: "Fase 5",
-  },
-  {
-    texto: "Biblioteca de clases grabadas",
-    nota: "Fase 6",
-  },
-];
+function fechaCorta(iso: string): string {
+  return new Date(iso).toLocaleDateString("es-CO", {
+    timeZone: "America/Bogota",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
 
+function vigente(v: unknown): v is string {
+  return typeof v === "string" && v !== ACCESO_BLOQUEADO && new Date(v).getTime() > Date.now();
+}
+
+/**
+ * Planes de la plataforma (ver lib/planes.ts). Antes esta página ofrecía una
+ * sola membresía de $25/mes con una lista de "En camino"; desde el 26 sept.
+ * 2026 son los tres planes que definió Alejo.
+ */
 export default async function Suscripcion() {
-  const access = await getAccess();
-  const pagosListos = paymentsConfigured();
+  const user = accountsConfigured() ? await currentUser() : null;
+  const acceso = (user?.publicMetadata?.acceso ?? {}) as Record<string, unknown>;
+  const salaHasta = vigente(acceso.sala) ? acceso.sala : null;
+  const clasesHasta = vigente(acceso.clases) ? acceso.clases : null;
 
   return (
     <div className="flex flex-1 flex-col bg-bg">
@@ -62,107 +54,36 @@ export default async function Suscripcion() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
         <section className="mb-12">
           <p className="mb-2 font-sans text-xs uppercase tracking-[0.14em] text-gold">
-            Membresía
+            Planes
           </p>
           <h1 className="text-balance font-display text-4xl font-medium leading-tight text-text">
-            Acceso completo a la plataforma.
+            Elige tu plan.
           </h1>
           <p className="mt-4 max-w-xl text-text-soft">
-            Una sola membresía, sin permanencia. Se cancela cuando quieras
-            desde tu propia cuenta.
+            Gráficas en vivo en la Sala de Trading y clases con el profesor Miguel. Sin
+            permanencia: los planes no se cobran solos — cuando se te venza, renuevas con un
+            clic.
           </p>
         </section>
 
-        <section className="rounded-lg border border-border bg-panel p-8">
-          <div className="flex items-baseline gap-2">
-            <span className="font-display text-5xl font-medium text-text">
-              $25
-            </span>
-            <span className="font-sans text-sm text-text-soft">USD / mes</span>
-          </div>
+        {(salaHasta || clasesHasta) && (
+          <section className="mb-10 rounded-lg border border-green/40 bg-green/10 px-5 py-4 text-sm text-text">
+            <p className="mb-1 font-sans text-[11px] uppercase tracking-[0.12em] text-green">
+              Tu acceso
+            </p>
+            {salaHasta && <p>Sala de Trading hasta el {fechaCorta(salaHasta)}.</p>}
+            {clasesHasta && <p>Clases con el profesor Miguel hasta el {fechaCorta(clasesHasta)}.</p>}
+          </section>
+        )}
 
-          <div className="my-7 h-px bg-border" />
+        <Planes conCuenta={Boolean(user)} />
 
-          <h2 className="mb-4 font-sans text-[11px] uppercase tracking-[0.12em] text-gold">
-            Disponible ahora
-          </h2>
-          <ul className="mb-8 flex flex-col gap-2.5">
-            {incluidoAhora.map((item) => (
-              <li key={item} className="flex gap-3 text-sm text-text">
-                <span className="mt-[2px] text-green">✓</span>
-                {item}
-              </li>
-            ))}
-          </ul>
-
-          <h2 className="mb-4 font-sans text-[11px] uppercase tracking-[0.12em] text-text-soft">
-            En camino
-          </h2>
-          <ul className="mb-8 flex flex-col gap-2.5">
-            {enCamino.map((item) => (
-              <li
-                key={item.texto}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-soft"
-              >
-                <span className="flex gap-3">
-                  <span className="mt-[2px] opacity-50">○</span>
-                  {item.texto}
-                </span>
-                <span className="rounded border border-border bg-input px-2 py-0.5 font-sans text-[10px]">
-                  {item.nota}
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          {access.status === "sin-cuenta" ? (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <SignUpButton mode="modal">
-                <button
-                  type="button"
-                  className="w-full rounded bg-gold px-6 py-3 font-sans text-sm font-medium text-bg transition-opacity hover:opacity-90"
-                >
-                  Crear cuenta
-                </button>
-              </SignUpButton>
-              <SignInButton mode="modal">
-                <button
-                  type="button"
-                  className="w-full rounded border border-border px-6 py-3 font-sans text-sm font-medium text-text transition-colors hover:border-gold/40"
-                >
-                  Ya tengo cuenta
-                </button>
-              </SignInButton>
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={!pagosListos || access.status === "activa"}
-              className="w-full rounded bg-gold px-6 py-3 font-sans text-sm font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {access.status === "activa"
-                ? "Suscripción activa"
-                : pagosListos
-                  ? "Suscribirme"
-                  : "Disponible muy pronto"}
-            </button>
-          )}
-
-          <p className="mt-3 text-center font-sans text-[11px] text-text-soft">
-            {access.status === "sin-cuenta"
-              ? "Crea tu cuenta ahora — cuando se active el cobro, ya vas a estar listo."
-              : access.status === "sin-suscripcion" && !pagosListos
-                ? "Tu cuenta ya está lista. Estamos terminando de conectar el sistema de pagos."
-                : ACCESS_MESSAGE[access.status]}
-          </p>
-        </section>
-
-        <p className="mt-8 text-center text-sm text-text-soft">
-          El pago se procesa con Stripe. Nosotros no guardamos ni vemos los
-          datos de tu tarjeta.
+        <p className="mt-10 text-center text-sm text-text-soft">
+          Precios en dólares (USD). El pago se procesa con Bold: nosotros no guardamos ni
+          vemos los datos de tu tarjeta.
         </p>
       </main>
 

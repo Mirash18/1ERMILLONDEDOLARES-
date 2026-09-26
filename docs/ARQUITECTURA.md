@@ -1567,6 +1567,35 @@ y opera desde el mismo celular.
   con cuenta real solo se pueden probar en producción (en local no hay
   Redis ni sesión de admin).
 
+## Planes y Sala de Trading solo con plan o semana gratis (26 sept. 2026)
+
+Paso 3 del plan de lanzamiento. Planes definidos por Alejo, todos en un
+solo lugar (`src/lib/planes.ts`, lo usan la página y el cobro del paso 4):
+
+| Plan | Precio (USD) | Incluye |
+|---|---|---|
+| Básico | $12.59 / mes | Sala de Trading 1 mes + la clase abierta (día que marca el admin) |
+| **Premium** (destacado) | $25.99 / semana | Clases 1 semana + Sala de Trading 1 mes |
+| Anual | $120 / año | Solo Sala de Trading 1 año (≈ $10/mes) |
+
+Promoción del Premium (decisiones de Alejo con ejemplo de fechas): al
+pagar la **4ª semana seguida**, las gráficas quedan por **2 meses desde
+ese pago**. "Seguidas" = paga a más tardar **3 días** después de que se
+le venció la semana anterior; si se pasa, el conteo vuelve a 1. Se aplica
+en el paso 4 (cobro con Bold).
+
+- `/suscripcion` muestra los tres planes (se quitó la membresía única de
+  $25/mes y la lista "En camino") y, si hay sesión, "Tu acceso: Sala hasta
+  X, Clases hasta Y".
+- **La Sala de Trading deja de ser pública.** Entra quien tenga plan o
+  acceso manual, y quien se registra durante su **semana gratis** (con
+  todas las acciones). Sin cuenta: "Pruébala gratis por una semana" +
+  planes. Pasada la semana: "Inscríbete para seguir en la Sala" + planes.
+  La portada sigue mostrando a todos el gráfico pequeño con SPY, QQQ, META
+  y GLD (`FREE_SYMBOLS`, sin cambios).
+- Mientras el cobro en línea no esté (paso 4), el botón de cada plan dice
+  "Pago en línea muy pronto".
+
 ## Decisiones pendientes
 
 Ver la sección "Puntos por decidir" del organigrama de ideas. Las que
